@@ -1,0 +1,6 @@
+{
+  "applicationName": "Work Order Traceability System",
+  "companyName": "Nasmyth Asia (IN) Pvt Ltd.",
+  "databasePath": "",
+  "_comment": "databasePath empty => %ProgramData%\\Nasmyth\\Traceability\\traceability.db. Set an absolute path to override."
+}

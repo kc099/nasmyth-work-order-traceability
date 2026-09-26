@@ -1,0 +1,145 @@
+<UserControl x:Class="NasmythTraceability.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:NasmythTraceability.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:SettingsViewModel}"
+             d:DesignHeight="760" d:DesignWidth="1120">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" Margin="4,0,4,10">
+            <TextBlock Text="Settings" Style="{StaticResource H1}" VerticalAlignment="Center" />
+
+            <!-- Edit lock: one password unlocks all changes on this screen -->
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsUnlocked}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <TextBlock Text="&#xE72E;" FontFamily="Segoe MDL2 Assets" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <TextBlock Text="Locked - enter password to edit" Style="{StaticResource Caption}"
+                               VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <PasswordBox x:Name="UnlockPassword" Width="180">
+                        <PasswordBox.InputBindings>
+                            <KeyBinding Key="Return" Command="{Binding UnlockCommand}"
+                                        CommandParameter="{Binding ElementName=UnlockPassword}" />
+                        </PasswordBox.InputBindings>
+                    </PasswordBox>
+                    <Button Content="Unlock" Style="{StaticResource AccentButton}" Margin="8,0,0,0"
+                            Command="{Binding UnlockCommand}" CommandParameter="{Binding ElementName=UnlockPassword}" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal"
+                            Visibility="{Binding IsUnlocked, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Text="&#xE785;" FontFamily="Segoe MDL2 Assets" VerticalAlignment="Center" Margin="0,0,8,0"
+                               Foreground="{DynamicResource AppOkBrush}" />
+                    <TextBlock Text="Unlocked" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="0,0,14,0" />
+                    <TextBlock Text="New password" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <PasswordBox x:Name="NewPassword" Width="160" />
+                    <Button Content="Change password" Margin="8,0,0,0"
+                            Command="{Binding ChangePasswordCommand}" CommandParameter="{Binding ElementName=NewPassword}" />
+                    <Button Content="Lock" Style="{StaticResource AccentButton}" Margin="8,0,0,0"
+                            Command="{Binding LockCommand}" />
+                </StackPanel>
+            </StackPanel>
+        </DockPanel>
+
+        <TabControl Grid.Row="1" Margin="4,0" SelectedIndex="{Binding SettingsTabIndex}">
+            <!-- ================= Stations ================= -->
+            <TabItem Header="Stations">
+                <Border Style="{StaticResource Card}" Margin="0,8,0,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <DataGrid Grid.Row="0" ItemsSource="{Binding Stations}" SelectedItem="{Binding SelectedStation}"
+                                  IsReadOnly="{Binding IsUnlocked, Converter={StaticResource InverseBool}}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Code" Binding="{Binding Code}" Width="100" />
+                                <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
+                                <DataGridTextColumn Header="Sequence" Binding="{Binding Sequence}" Width="100" />
+                                <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding IsEnabled}" Width="90" />
+                                <DataGridCheckBoxColumn Header="Final" Binding="{Binding IsFinal}" Width="80" IsReadOnly="True" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12,0,0">
+                            <Button Content="Add station" Command="{Binding AddStationCommand}" Margin="0,0,8,0" />
+                            <Button Content="Save changes" Style="{StaticResource AccentButton}"
+                                    Command="{Binding SaveStationsCommand}" Margin="0,0,8,0" />
+                            <Button Content="Set as final" Command="{Binding SetFinalStationCommand}" Margin="0,0,8,0" />
+                            <Button Content="Delete" Command="{Binding DeleteStationCommand}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </TabItem>
+
+            <!-- ================= Database ================= -->
+            <TabItem Header="Database">
+                <Border Style="{StaticResource Card}" Margin="0,8,0,0">
+                    <StackPanel MaxWidth="640" HorizontalAlignment="Left">
+                        <TextBlock Text="Database file (SQLite3)" Style="{StaticResource Caption}" />
+                        <TextBox Text="{Binding DatabasePath, Mode=OneWay}" IsReadOnly="True" Margin="0,4,0,12" />
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="Backup..." Style="{StaticResource AccentButton}"
+                                    Command="{Binding BackupDatabaseCommand}" Margin="0,0,8,0" />
+                            <Button Content="Restore..." Command="{Binding RestoreDatabaseCommand}" Margin="0,0,8,0" />
+                            <Button Content="Open folder" Command="{Binding OpenDatabaseFolderCommand}" />
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource Caption}" Margin="0,12,0,0" TextWrapping="Wrap"
+                                   Text="Restore replaces all current data with the selected backup. Take a backup first." />
+                    </StackPanel>
+                </Border>
+            </TabItem>
+
+            <!-- ================= Logs ================= -->
+            <TabItem Header="Logs">
+                <Border Style="{StaticResource Card}" Margin="0,8,0,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <TextBlock Text="Filter" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                            <ComboBox Width="150" ItemsSource="{Binding LogFilters}" SelectedItem="{Binding SelectedLogFilter}" />
+                            <Button Content="Refresh" Command="{Binding ReloadLogsCommand}" Margin="8,0,0,0" />
+                            <Button Content="Delete selected" Command="{Binding DeleteLogCommand}" Margin="8,0,0,0" />
+                            <Button Content="Clear all" Command="{Binding ClearLogsCommand}" Margin="8,0,0,0" />
+                            <Button Content="Export CSV" Command="{Binding ExportLogsCsvCommand}" Margin="8,0,0,0" />
+                        </StackPanel>
+                        <DataGrid Grid.Row="1" ItemsSource="{Binding Logs}" SelectedItem="{Binding SelectedLog}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Time" Binding="{Binding CreatedAt, StringFormat=dd/MM/yyyy HH:mm:ss}" Width="150" />
+                                <DataGridTextColumn Header="Type" Binding="{Binding LogType}" Width="90" />
+                                <DataGridTextColumn Header="Station" Binding="{Binding StationCode}" Width="80" />
+                                <DataGridTextColumn Header="Device" Binding="{Binding DeviceName}" Width="140" />
+                                <DataGridTextColumn Header="Barcode" Binding="{Binding RawData}" Width="*" />
+                                <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="1.4*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </TabItem>
+        </TabControl>
+
+        <Border Grid.Row="2" Margin="4,10,4,0" Padding="10,6" CornerRadius="6"
+                Background="{DynamicResource AppSurfaceAltBrush}">
+            <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource Caption}" TextTrimming="CharacterEllipsis" />
+        </Border>
+    </Grid>
+</UserControl>

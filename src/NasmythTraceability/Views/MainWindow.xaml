@@ -1,0 +1,156 @@
+<Window x:Class="NasmythTraceability.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:NasmythTraceability.ViewModels"
+        xmlns:views="clr-namespace:NasmythTraceability.Views"
+        xmlns:ctl="clr-namespace:NasmythTraceability.Controls"
+        d:DataContext="{d:DesignInstance vm:MainViewModel}"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Work Order Traceability System"
+        Height="840" Width="1640" MinHeight="660" MinWidth="1060"
+        WindowStartupLocation="CenterScreen"
+        FontFamily="Segoe UI"
+        Background="{DynamicResource AppBackgroundBrush}"
+        TextOptions.TextFormattingMode="Ideal">
+
+    <Window.Resources>
+        <DataTemplate x:Key="Tpl_Dashboard">
+            <views:DashboardView />
+        </DataTemplate>
+        <DataTemplate x:Key="Tpl_CurrentInfo">
+            <views:CurrentInformationView />
+        </DataTemplate>
+        <DataTemplate x:Key="Tpl_Reports">
+            <views:ReportsView />
+        </DataTemplate>
+        <DataTemplate x:Key="Tpl_Settings">
+            <views:SettingsView />
+        </DataTemplate>
+
+        <Style x:Key="NavGlyph" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="Width" Value="22" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ================= Header ================= -->
+        <Border Grid.Row="0" Background="{DynamicResource AppHeaderBrush}"
+                BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1">
+            <Grid Margin="18,10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <ctl:BrandLogo Height="65" VerticalAlignment="Center" />
+                    <StackPanel Margin="30,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding CompanyTitle}" FontSize="34" FontWeight="Bold"
+                                   TextWrapping="NoWrap" TextOptions.TextFormattingMode="Ideal"
+                                   Foreground="{DynamicResource AppTextPrimaryBrush}" />
+                        <TextBlock Text="{Binding ApplicationTitle}" FontSize="15"
+                                   TextWrapping="NoWrap"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,3,0,0" />
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <StackPanel VerticalAlignment="Center" Margin="0,0,14,0" HorizontalAlignment="Right">
+                        <TextBlock Text="{Binding DateText}" Style="{StaticResource Caption}"
+                                   HorizontalAlignment="Right" />
+                        <TextBlock Text="{Binding ClockText}" FontSize="20" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource AppTextPrimaryBrush}" HorizontalAlignment="Right" />
+                    </StackPanel>
+                    <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:AppPage.Settings}"
+                            ToolTip="Settings" Width="42" Height="42" Padding="0">
+                        <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="18" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ================= Body ================= -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="214" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Navigation rail -->
+            <Border Grid.Column="0" Background="{DynamicResource AppSurfaceAltBrush}"
+                    BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,1,0">
+                <DockPanel LastChildFill="False">
+                    <TextBlock DockPanel.Dock="Top" Text="MENU" Style="{StaticResource Caption}"
+                               Margin="24,18,0,8" />
+
+                    <RadioButton DockPanel.Dock="Top" GroupName="Nav" Style="{StaticResource NavButton}"
+                                 IsChecked="{Binding CurrentPage, Converter={StaticResource EnumMatch}, ConverterParameter=Dashboard, Mode=TwoWay}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE80F;" Style="{StaticResource NavGlyph}" />
+                            <TextBlock Text="Dashboard" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+
+                    <RadioButton DockPanel.Dock="Top" GroupName="Nav" Style="{StaticResource NavButton}"
+                                 IsChecked="{Binding CurrentPage, Converter={StaticResource EnumMatch}, ConverterParameter=CurrentInformation, Mode=TwoWay}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE7C1;" Style="{StaticResource NavGlyph}" />
+                            <TextBlock Text="Current Information" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+
+                    <RadioButton DockPanel.Dock="Top" GroupName="Nav" Style="{StaticResource NavButton}"
+                                 IsChecked="{Binding CurrentPage, Converter={StaticResource EnumMatch}, ConverterParameter=Reports, Mode=TwoWay}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE9D9;" Style="{StaticResource NavGlyph}" />
+                            <TextBlock Text="Reports &amp; Analytics" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+
+                    <RadioButton DockPanel.Dock="Top" GroupName="Nav" Style="{StaticResource NavButton}"
+                                 IsChecked="{Binding CurrentPage, Converter={StaticResource EnumMatch}, ConverterParameter=Settings, Mode=TwoWay}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE713;" Style="{StaticResource NavGlyph}" />
+                            <TextBlock Text="Settings" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+
+                    <StackPanel DockPanel.Dock="Bottom" Margin="24,0,12,16">
+                        <TextBlock Text="{Binding AppVersion}" Style="{StaticResource Caption}" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <!-- Content region -->
+            <ContentControl Grid.Column="1" Margin="16" Content="{Binding ActiveViewModel}">
+                <ContentControl.Style>
+                    <Style TargetType="ContentControl">
+                        <Setter Property="ContentTemplate" Value="{StaticResource Tpl_Dashboard}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding CurrentPage}" Value="CurrentInformation">
+                                <Setter Property="ContentTemplate" Value="{StaticResource Tpl_CurrentInfo}" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding CurrentPage}" Value="Reports">
+                                <Setter Property="ContentTemplate" Value="{StaticResource Tpl_Reports}" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding CurrentPage}" Value="Settings">
+                                <Setter Property="ContentTemplate" Value="{StaticResource Tpl_Settings}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ContentControl.Style>
+            </ContentControl>
+        </Grid>
+    </Grid>
+</Window>

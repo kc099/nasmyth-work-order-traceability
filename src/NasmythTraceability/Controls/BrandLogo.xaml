@@ -1,0 +1,34 @@
+<UserControl x:Class="NasmythTraceability.Controls.BrandLogo"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignHeight="48" d:DesignWidth="150">
+
+    <Grid>
+        <!-- white oval plate -->
+        <Ellipse Fill="White">
+            <Ellipse.Effect>
+                <DropShadowEffect BlurRadius="12" ShadowDepth="0" Opacity="0.35" Color="#FF000000" />
+            </Ellipse.Effect>
+        </Ellipse>
+
+        <!-- real logo when Assets/nasmyth-logo.(png|jpg) is present -->
+        <Image x:Name="RasterLogo" Stretch="Uniform" Margin="14,7" Visibility="Collapsed"
+               RenderOptions.BitmapScalingMode="HighQuality" />
+
+        <!-- vector fallback -->
+        <Viewbox x:Name="VectorLogo" Stretch="Uniform" Margin="20,9">
+            <Canvas Width="238" Height="94">
+                <!-- wordmark -->
+                <TextBlock Canvas.Left="6" Canvas.Top="8" Text="Nasmyth"
+                           FontFamily="Segoe UI" FontWeight="Bold" FontSize="47" Foreground="#FF14783C" />
+                <TextBlock Canvas.Left="203" Canvas.Top="12" Text="&#174;"
+                           FontFamily="Segoe UI" FontWeight="Bold" FontSize="15" Foreground="#FF14783C" />
+                <!-- swoosh, drawn in front through the lower third of the letters -->
+                <Path Fill="#FF37A93C"
+                      Data="M 8,64 C 76,90 158,82 232,26 C 214,40 208,48 198,55 C 128,94 50,84 14,72 C 11,70 9,67 8,64 Z" />
+            </Canvas>
+        </Viewbox>
+    </Grid>
+</UserControl>

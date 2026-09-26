@@ -1,0 +1,308 @@
+using System.Data;
+using NasmythTraceability.Data;
+using NasmythTraceability.Models;
+
+namespace NasmythTraceability.Services;
+
+/// <summary>Payload for <see cref="TraceService.Changed"/>.</summary>
+public sealed record TraceChangedEventArgs(bool Cleared);
+
+/// <summary>Writes trace events and current position; serves history and barcode search.</summary>
+public sealed class TraceService
+{
+    private readonly DatabaseService _db;
+
+    public TraceService(DatabaseService db) => _db = db;
+
+    /// <summary>
+    /// Raised after trace data is changed <b>outside</b> the normal scan flow
+    /// (a delete, clear or purge). <c>Cleared</c> is true for a bulk wipe.
+    /// The live scan path does not raise this - views listen to ScanProcessed for that.
+    /// </summary>
+    public event EventHandler<TraceChangedEventArgs>? Changed;
+
+    private void RaiseChanged(bool cleared) => Changed?.Invoke(this, new TraceChangedEventArgs(cleared));
+
+    // ---------------------------------------------------------------- write
+
+    /// <summary>
+    /// Records one trace event in <c>trace_history</c> and upserts <c>current_trace</c>.
+    /// Pass <paramref name="at"/> to back-date the event (used by the demo data generator).
+    /// </summary>
+    public TraceHistory Record(string barcode, Station station, ScanResult result, string message,
+        int? routeId, string deviceKey, bool isFinalStation, DateTime? at = null)
+    {
+        var now = at ?? DateTime.Now;
+        long id = 0;
+
+        _db.InTransaction((cn, tx) =>
+        {
+            DatabaseService.Exec(cn, tx,
+                "INSERT INTO trace_history (barcode, station_id, station_code, result, message, route_id, device_key, scanned_at) " +
+                "VALUES ($b, $sid, $sc, $r, $m, $rt, $dk, $t);",
+                ("$b", barcode), ("$sid", station.Id), ("$sc", station.Code),
+                ("$r", result.ToString()), ("$m", message), ("$rt", routeId),
+                ("$dk", deviceKey), ("$t", Db.ToDb(now)));
+
+            id = DatabaseService.ScalarLong(cn, tx, "SELECT last_insert_rowid();", 0);
+
+            var status = result == ScanResult.NG
+                ? TraceStatus.Rejected
+                : isFinalStation ? TraceStatus.Completed : TraceStatus.InProgress;
+
+            DatabaseService.Exec(cn, tx,
+                "INSERT INTO current_trace (barcode, station_id, station_code, result, status, route_id, scan_count, first_scan_at, last_scan_at) " +
+                "VALUES ($b, $sid, $sc, $r, $st, $rt, 1, $t, $t) " +
+                "ON CONFLICT(barcode) DO UPDATE SET " +
+                "  station_id = excluded.station_id, station_code = excluded.station_code, result = excluded.result, " +
+                "  status = excluded.status, route_id = COALESCE(excluded.route_id, current_trace.route_id), " +
+                "  scan_count = current_trace.scan_count + 1, last_scan_at = excluded.last_scan_at;",
+                ("$b", barcode), ("$sid", station.Id), ("$sc", station.Code),
+                ("$r", result.ToString()), ("$st", status.ToString()), ("$rt", routeId),
+                ("$t", Db.ToDb(now)));
+        });
+
+        return new TraceHistory
+        {
+            Id = id,
+            Barcode = barcode,
+            StationId = station.Id,
+            StationCode = station.Code,
+            Result = result,
+            Message = message,
+            RouteId = routeId,
+            DeviceKey = deviceKey,
+            ScannedAt = now,
+        };
+    }
+
+    public void LogScan(string rawData, int? stationId, string stationCode, string deviceKey,
+        string deviceName, ScanLogType type, string message, DateTime? at = null)
+    {
+        _db.Execute(
+            "INSERT INTO scan_logs (raw_data, station_id, station_code, device_key, device_name, log_type, message, created_at) " +
+            "VALUES ($raw, $sid, $sc, $dk, $dn, $lt, $m, $t);",
+            ("$raw", rawData), ("$sid", stationId), ("$sc", stationCode), ("$dk", deviceKey),
+            ("$dn", deviceName), ("$lt", type.ToString()), ("$m", message), ("$t", Db.ToDb(at ?? DateTime.Now)));
+    }
+
+    // ---------------------------------------------------------------- read
+
+    public CurrentTrace? GetCurrent(string barcode)
+        => _db.QuerySingle("SELECT * FROM current_trace WHERE barcode = $b;", MapCurrent, ("$b", barcode));
+
+    public List<TraceHistory> GetHistory(string barcode)
+        => _db.Query("SELECT * FROM trace_history WHERE barcode = $b ORDER BY scanned_at, id;",
+            MapHistory, ("$b", barcode));
+
+    public List<TraceHistory> GetRecent(int count = 100)
+        => _db.Query("SELECT * FROM trace_history ORDER BY scanned_at DESC, id DESC LIMIT $n;",
+            MapHistory, ("$n", count));
+
+    /// <summary>Was this exact barcode scanned at this station within the given window?</summary>
+    public bool IsDuplicate(string barcode, int stationId, TimeSpan window)
+    {
+        var since = Db.ToDb(DateTime.Now - window);
+        var n = _db.ScalarInt(
+            "SELECT COUNT(*) FROM trace_history WHERE barcode = $b AND station_id = $s AND scanned_at >= $since;",
+            ("$b", barcode), ("$s", stationId), ("$since", since));
+        return n > 0;
+    }
+
+    public List<ScanLog> GetScanLogs(int count = 200, ScanLogType? type = null)
+    {
+        var sql = "SELECT * FROM scan_logs" +
+                  (type is null ? "" : " WHERE log_type = $t") +
+                  " ORDER BY created_at DESC, id DESC LIMIT $n;";
+        return type is null
+            ? _db.Query(sql, MapLog, ("$n", count))
+            : _db.Query(sql, MapLog, ("$t", type.ToString()), ("$n", count));
+    }
+
+    public void DeleteScanLog(long id)
+        => _db.Execute("DELETE FROM scan_logs WHERE id = $id;", ("$id", id));
+
+    /// <summary>Deletes every scan_logs row, or only those of one type. Returns rows removed.</summary>
+    public int ClearScanLogs(ScanLogType? type = null)
+        => type is null
+            ? _db.Execute("DELETE FROM scan_logs;")
+            : _db.Execute("DELETE FROM scan_logs WHERE log_type = $t;", ("$t", type.ToString()));
+
+    /// <summary>
+    /// Deletes a scan_logs row and, when it represents a recorded scan (Raw/Rejected),
+    /// the matching trace_history row too, then repairs current_trace for that barcode.
+    /// </summary>
+    public void DeleteScanLogAndTrace(ScanLog log)
+    {
+        _db.InTransaction((cn, tx) =>
+        {
+            DatabaseService.Exec(cn, tx, "DELETE FROM scan_logs WHERE id = $id;", ("$id", log.Id));
+
+            if (log.LogType is ScanLogType.Raw or ScanLogType.Rejected && !string.IsNullOrEmpty(log.RawData))
+            {
+                var lo = Db.ToDb(log.CreatedAt.AddSeconds(-2));
+                var hi = Db.ToDb(log.CreatedAt.AddSeconds(2));
+                DatabaseService.Exec(cn, tx,
+                    "DELETE FROM trace_history WHERE id IN (" +
+                    "  SELECT id FROM trace_history WHERE barcode = $b AND station_code = $sc " +
+                    "  AND scanned_at BETWEEN $lo AND $hi ORDER BY ABS(julianday(scanned_at) - julianday($at)) LIMIT 1);",
+                    ("$b", log.RawData), ("$sc", log.StationCode),
+                    ("$lo", lo), ("$hi", hi), ("$at", Db.ToDb(log.CreatedAt)));
+
+                RepairCurrentTrace(cn, tx, log.RawData);
+            }
+        });
+        RaiseChanged(cleared: false);
+    }
+
+    /// <summary>Deletes one trace_history row and repairs current_trace for its barcode.</summary>
+    public void DeleteTrace(long id)
+    {
+        _db.InTransaction((cn, tx) =>
+        {
+            var barcode = DatabaseService.ScalarString(cn, tx,
+                "SELECT barcode FROM trace_history WHERE id = $id;", ("$id", id));
+            DatabaseService.Exec(cn, tx, "DELETE FROM trace_history WHERE id = $id;", ("$id", id));
+            if (!string.IsNullOrEmpty(barcode))
+                RepairCurrentTrace(cn, tx, barcode);
+        });
+        RaiseChanged(cleared: false);
+    }
+
+    /// <summary>Wipes all traceability data (history, current position and raw logs). Keeps stations/settings.</summary>
+    public void PurgeAll()
+    {
+        _db.InTransaction((cn, tx) =>
+        {
+            DatabaseService.Exec(cn, tx, "DELETE FROM scan_logs;");
+            DatabaseService.Exec(cn, tx, "DELETE FROM trace_history;");
+            DatabaseService.Exec(cn, tx, "DELETE FROM current_trace;");
+        });
+        RaiseChanged(cleared: true);
+    }
+
+    /// <summary>Also clears trace_history + current_trace alongside every scan_logs row.</summary>
+    public int ClearScanLogsAndTraces()
+    {
+        var removed = 0;
+        _db.InTransaction((cn, tx) =>
+        {
+            removed = DatabaseService.Exec(cn, tx, "DELETE FROM scan_logs;");
+            DatabaseService.Exec(cn, tx, "DELETE FROM trace_history;");
+            DatabaseService.Exec(cn, tx, "DELETE FROM current_trace;");
+        });
+        RaiseChanged(cleared: true);
+        return removed;
+    }
+
+    /// <summary>Rebuilds every <c>current_trace</c> row from the latest history row per barcode.</summary>
+    public int RebuildAllCurrentTraces()
+    {
+        var n = 0;
+        _db.InTransaction((cn, tx) =>
+        {
+            DatabaseService.Exec(cn, tx, "DELETE FROM current_trace;");
+            n = DatabaseService.Exec(cn, tx,
+                "INSERT INTO current_trace (barcode, station_id, station_code, result, status, route_id, scan_count, first_scan_at, last_scan_at) " +
+                "SELECT h.barcode, h.station_id, h.station_code, h.result, " +
+                "  CASE WHEN h.result = 'NG' THEN 'Rejected' " +
+                "       WHEN EXISTS (SELECT 1 FROM stations s WHERE s.id = h.station_id AND s.is_final = 1) THEN 'Completed' " +
+                "       ELSE 'InProgress' END, " +
+                "  h.route_id, (SELECT COUNT(*) FROM trace_history t2 WHERE t2.barcode = h.barcode), " +
+                "  (SELECT MIN(scanned_at) FROM trace_history t3 WHERE t3.barcode = h.barcode), h.scanned_at " +
+                "FROM trace_history h " +
+                "WHERE h.id = (SELECT id FROM trace_history t WHERE t.barcode = h.barcode " +
+                "              ORDER BY scanned_at DESC, id DESC LIMIT 1);");
+        });
+        RaiseChanged(cleared: false);
+        return n;
+    }
+
+    private static void RepairCurrentTrace(Microsoft.Data.Sqlite.SqliteConnection cn,
+        Microsoft.Data.Sqlite.SqliteTransaction tx, string barcode)
+    {
+        // Rebuild the current_trace row from the latest surviving history row, or drop it.
+        DatabaseService.Exec(cn, tx, "DELETE FROM current_trace WHERE barcode = $b;", ("$b", barcode));
+        DatabaseService.Exec(cn, tx,
+            "INSERT INTO current_trace (barcode, station_id, station_code, result, status, route_id, scan_count, first_scan_at, last_scan_at) " +
+            "SELECT h.barcode, h.station_id, h.station_code, h.result, " +
+            "  CASE WHEN h.result = 'NG' THEN 'Rejected' " +
+            "       WHEN EXISTS (SELECT 1 FROM stations s WHERE s.id = h.station_id AND s.is_final = 1) THEN 'Completed' " +
+            "       ELSE 'InProgress' END, " +
+            "  h.route_id, (SELECT COUNT(*) FROM trace_history t2 WHERE t2.barcode = h.barcode), " +
+            "  (SELECT MIN(scanned_at) FROM trace_history t3 WHERE t3.barcode = h.barcode), h.scanned_at " +
+            "FROM trace_history h " +
+            "WHERE h.barcode = $b " +
+            "ORDER BY h.scanned_at DESC, h.id DESC LIMIT 1;",
+            ("$b", barcode));
+    }
+
+    private static ScanLog MapLog(IDataRecord r) => new()
+    {
+        Id = r.GetLong("id"),
+        RawData = r.GetString("raw_data"),
+        StationId = r.GetIntOrNull("station_id"),
+        StationCode = r.GetString("station_code"),
+        DeviceKey = r.GetString("device_key"),
+        DeviceName = r.GetString("device_name"),
+        LogType = Enum.TryParse<ScanLogType>(r.GetString("log_type"), out var t) ? t : ScanLogType.Info,
+        Message = r.GetString("message"),
+        CreatedAt = r.GetDate("created_at"),
+    };
+
+    public List<CurrentTrace> SearchBarcodes(string term, int limit = 50)
+    {
+        var like = "%" + term.Trim() + "%";
+        return _db.Query(
+            "SELECT * FROM current_trace WHERE barcode LIKE $q ORDER BY last_scan_at DESC LIMIT $n;",
+            MapCurrent, ("$q", like), ("$n", limit));
+    }
+
+    /// <summary>
+    /// Every barcode's current station - the core "what is where right now" view.
+    /// Optionally filtered by station code and/or a barcode search term.
+    /// </summary>
+    public List<CurrentTrace> GetCurrentPositions(string? stationCode = null, string? search = null, int limit = 1000)
+    {
+        var like = string.IsNullOrWhiteSpace(search) ? null : "%" + search.Trim() + "%";
+        return _db.Query(
+            "SELECT * FROM current_trace " +
+            "WHERE ($sc IS NULL OR station_code = $sc) " +
+            "  AND ($q IS NULL OR barcode LIKE $q) " +
+            "ORDER BY last_scan_at DESC LIMIT $n;",
+            MapCurrent,
+            ("$sc", string.IsNullOrWhiteSpace(stationCode) ? null : stationCode),
+            ("$q", like), ("$n", limit));
+    }
+
+    // ---------------------------------------------------------------- mapping
+
+    private static TraceHistory MapHistory(IDataRecord r) => new()
+    {
+        Id = r.GetLong("id"),
+        Barcode = r.GetString("barcode"),
+        StationId = r.GetInt("station_id"),
+        StationCode = r.GetString("station_code"),
+        Result = ParseResult(r.GetString("result")),
+        Message = r.GetString("message"),
+        RouteId = r.GetIntOrNull("route_id"),
+        DeviceKey = r.GetString("device_key"),
+        ScannedAt = r.GetDate("scanned_at"),
+    };
+
+    private static CurrentTrace MapCurrent(IDataRecord r) => new()
+    {
+        Barcode = r.GetString("barcode"),
+        StationId = r.GetInt("station_id"),
+        StationCode = r.GetString("station_code"),
+        Result = ParseResult(r.GetString("result")),
+        Status = Enum.TryParse<TraceStatus>(r.GetString("status"), out var st) ? st : TraceStatus.InProgress,
+        RouteId = r.GetIntOrNull("route_id"),
+        ScanCount = r.GetInt("scan_count"),
+        FirstScanAt = r.GetDate("first_scan_at"),
+        LastScanAt = r.GetDate("last_scan_at"),
+    };
+
+    private static ScanResult ParseResult(string s)
+        => string.Equals(s, "NG", StringComparison.OrdinalIgnoreCase) ? ScanResult.NG : ScanResult.OK;
+}
