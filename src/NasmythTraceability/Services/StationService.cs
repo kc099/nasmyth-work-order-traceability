@@ -4,7 +4,7 @@ using NasmythTraceability.Models;
 
 namespace NasmythTraceability.Services;
 
-/// <summary>Stations and the USB-scanner-to-station mapping.</summary>
+/// <summary>Stations and the USB-reader-to-station mapping.</summary>
 public sealed class StationService
 {
     private readonly DatabaseService _db;
@@ -124,6 +124,24 @@ public sealed class StationService
             ("$s", stationId), ("$k", deviceKey), ("$n", deviceName), ("$t", Db.ToDb(DateTime.Now)));
         RaiseChanged();
         return id;
+    }
+
+    /// <summary>
+    /// Station a newly detected reader is linked to: the first enabled station that has no
+    /// reader yet, otherwise the first enabled station. Null when no station is enabled.
+    /// </summary>
+    public Station? PickStationForNewReader()
+    {
+        var stations = GetStations(includeDisabled: false);
+        var taken = GetDevices().Select(d => d.StationId).ToHashSet();
+        return stations.FirstOrDefault(s => !taken.Contains(s.Id)) ?? stations.FirstOrDefault();
+    }
+
+    public void MoveDeviceToStation(int deviceId, int stationId)
+    {
+        _db.Execute("UPDATE station_devices SET station_id = $s WHERE id = $id;",
+            ("$s", stationId), ("$id", deviceId));
+        RaiseChanged();
     }
 
     public void SetDeviceEnabled(int deviceId, bool enabled)

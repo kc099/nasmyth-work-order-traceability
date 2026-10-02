@@ -43,16 +43,31 @@ public sealed class AppServices : IDisposable
         if (RawInput is not null)
         {
             RefreshScannerAllowList();
+            ApplyReaderSettings();
             Stations.Changed += OnStationsChanged;
+            Settings.Changed += OnSettingsChanged;
         }
     }
 
     private void OnStationsChanged(object? sender, EventArgs e) => RefreshScannerAllowList();
 
+    private void OnSettingsChanged(object? sender, EventArgs e) => ApplyReaderSettings();
+
     /// <summary>Tells the raw-input reader which HID devices are mapped, enabled scanners.</summary>
     private void RefreshScannerAllowList()
         => RawInput?.SetAllowedDevices(
             Stations.GetDevices().Where(d => d.IsEnabled).Select(d => d.DeviceKey));
+
+    /// <summary>Pushes the auto-detection settings to the raw-input reader.</summary>
+    private void ApplyReaderSettings()
+    {
+        if (RawInput is null)
+            return;
+
+        RawInput.AutoDetect = Settings.GetBool(SettingsService.AutoDetectReaders, true);
+        RawInput.SetKnownReaderIds(
+            Settings.Get(SettingsService.KnownReaderIds, SettingsService.DefaultKnownReaderIds).Split(';'));
+    }
 
     public AppConfig Config { get; }
     public DatabaseService Database { get; }
@@ -70,6 +85,7 @@ public sealed class AppServices : IDisposable
     public void Dispose()
     {
         Stations.Changed -= OnStationsChanged;
+        Settings.Changed -= OnSettingsChanged;
         Coordinator.Dispose();
         RawInput?.Dispose();
         Simulated?.Dispose();

@@ -39,7 +39,7 @@ public static class PdfExporter
 
         var columns = new (string Header, double Width)[]
         {
-            ("Time", 110), ("Station", 55), ("Barcode", 170), ("Result", 50), ("Message", 130),
+            ("Time", 110), ("Station", 55), ("Work Order", 170), ("Result", 50), ("Message", 130),
         };
         y = DrawTableHeader(gfx, fonts, columns, y);
 
@@ -92,7 +92,7 @@ public static class PdfExporter
             ("Total Scans", b.Summary.TotalScans.ToString("N0")),
             ("OK Scans", b.Summary.OkScans.ToString("N0")),
             ("NG Scans", b.Summary.NgScans.ToString("N0")),
-            ("Unique Barcodes", b.Summary.UniqueBarcodes.ToString("N0")),
+            ("Unique Work Orders", b.Summary.UniqueBarcodes.ToString("N0")),
             ("OK Rate", b.Summary.OkRate.ToString("P1")),
         };
 

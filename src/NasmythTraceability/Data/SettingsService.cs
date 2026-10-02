@@ -30,6 +30,16 @@ public sealed class SettingsService
     public const string MinBarcodeLength = "scanning.minBarcodeLength";
     public const string TreatUnmappedDeviceAsError = "scanning.treatUnmappedAsError";
 
+    /// <summary>Link a reader nobody has set up to a station on its first card tap.</summary>
+    public const string AutoDetectReaders = "scanning.autoDetectReaders";
+
+    /// <summary>
+    /// Semicolon-separated hardware ids of reader models that are always treated as readers.
+    /// The default is the JT308 125 kHz USB card reader.
+    /// </summary>
+    public const string KnownReaderIds = "scanning.knownReaderIds";
+    public const string DefaultKnownReaderIds = "VID_FFFF&PID_0035";
+
     public const string ReportDefaultRangeDays = "reports.defaultRangeDays";
     public const string ReportExportFolder = "reports.exportFolder";
     public const string ReportDefaultFormat = "reports.defaultFormat";
@@ -116,6 +126,8 @@ public sealed class SettingsService
             [DuplicateWindowSeconds] = "5",
             [MinBarcodeLength] = "4",
             [TreatUnmappedDeviceAsError] = "true",
+            [AutoDetectReaders] = "true",
+            [KnownReaderIds] = DefaultKnownReaderIds,
             [ReportDefaultRangeDays] = "7",
             [ReportExportFolder] = "",
             [ReportDefaultFormat] = "Excel",

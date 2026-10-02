@@ -88,6 +88,44 @@
                 </Border>
             </TabItem>
 
+            <!-- ================= Readers ================= -->
+            <TabItem Header="Readers">
+                <Border Style="{StaticResource Card}" Margin="0,8,0,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                            <CheckBox Content="Link a new reader automatically when a card is tapped on it"
+                                      IsChecked="{Binding AutoDetectReaders}" IsEnabled="{Binding IsUnlocked}" />
+                            <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap"
+                                       Text="A new reader is linked to the first station that has no reader yet. Select it below and use Move to put it on a different station." />
+                        </StackPanel>
+                        <DataGrid Grid.Row="1" ItemsSource="{Binding Readers}" SelectedItem="{Binding SelectedReader}"
+                                  IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Station" Binding="{Binding StationCode}" Width="90" />
+                                <DataGridTextColumn Header="Reader" Binding="{Binding DeviceName}" Width="200" />
+                                <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding IsEnabled}" Width="90" />
+                                <DataGridTextColumn Header="Linked on" Binding="{Binding CreatedAt, StringFormat=dd/MM/yyyy HH:mm}" Width="140" />
+                                <DataGridTextColumn Header="Device ID" Binding="{Binding DeviceKey}" Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,0">
+                            <TextBlock Text="Move to station" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                            <ComboBox Width="140" ItemsSource="{Binding Stations}" SelectedItem="{Binding ReaderTargetStation}"
+                                      ItemTemplate="{StaticResource StationCodeItemTemplate}" />
+                            <Button Content="Move" Style="{StaticResource AccentButton}"
+                                    Command="{Binding MoveReaderCommand}" Margin="8,0,8,0" />
+                            <Button Content="Enable / disable" Command="{Binding ToggleReaderCommand}" Margin="0,0,8,0" />
+                            <Button Content="Remove" Command="{Binding RemoveReaderCommand}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </TabItem>
+
             <!-- ================= Database ================= -->
             <TabItem Header="Database">
                 <Border Style="{StaticResource Card}" Margin="0,8,0,0">
@@ -128,7 +166,7 @@
                                 <DataGridTextColumn Header="Type" Binding="{Binding LogType}" Width="90" />
                                 <DataGridTextColumn Header="Station" Binding="{Binding StationCode}" Width="80" />
                                 <DataGridTextColumn Header="Device" Binding="{Binding DeviceName}" Width="140" />
-                                <DataGridTextColumn Header="Barcode" Binding="{Binding RawData}" Width="*" />
+                                <DataGridTextColumn Header="Work Order" Binding="{Binding RawData}" Width="*" />
                                 <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="1.4*" />
                             </DataGrid.Columns>
                         </DataGrid>

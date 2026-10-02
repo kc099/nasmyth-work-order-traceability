@@ -2,6 +2,7 @@ using System.IO;
 using NasmythTraceability.Data;
 using NasmythTraceability.Export;
 using NasmythTraceability.Models;
+using NasmythTraceability.Services;
 
 namespace NasmythTraceability.Helpers;
 
@@ -56,7 +57,7 @@ public static class SelfTest
             Check("immediate re-scan flagged duplicate", dup.Outcome == ScanOutcome.Duplicate);
 
             var shortScan = svc.Coordinator.SubmitManualScan(st1, "AB");
-            Check("short barcode rejected as NG", shortScan is { Outcome: ScanOutcome.Rejected, Result: ScanResult.NG });
+            Check("short code rejected as NG", shortScan is { Outcome: ScanOutcome.Rejected, Result: ScanResult.NG });
 
             // no fixed routing: stations may be visited in any order, all accepted OK
             var o1 = svc.Coordinator.SubmitManualScan(st3, "UNIT-000123");
@@ -113,6 +114,51 @@ public static class SelfTest
             var backup = Path.Combine(work, "backup.db");
             svc.Database.Backup(backup);
             Check("database backup produced a file", new FileInfo(backup).Length > 0);
+
+            // ---- a new card reader links itself on its first tap -------------------
+            const string readerA = @"\\?\HID#VID_FFFF&PID_0035&MI_00#SELFTEST-A";
+            const string readerB = @"\\?\HID#VID_FFFF&PID_0035&MI_00#SELFTEST-B";
+            const string readerC = @"\\?\HID#VID_FFFF&PID_0035&MI_00#SELFTEST-C";
+            ScanProcessedEventArgs? lastFeed = null;
+            void OnFeed(object? s, ScanProcessedEventArgs a) => lastFeed = a;
+            svc.Coordinator.ScanProcessed += OnFeed;
+
+            svc.Simulated!.Emit("0012345678", readerA, "Test reader A", isNewDevice: true);
+            var linkedA = svc.Stations.GetDeviceByKey(readerA);
+            Check("first card tap links a new reader to ST01", linkedA?.StationCode == "ST01");
+            Check("first card tap is saved to the database",
+                svc.Trace.GetCurrent("0012345678")?.StationCode == "ST01");
+            Check("first card tap reaches the live scan feed",
+                lastFeed is { Barcode: "0012345678", Outcome: ScanOutcome.Accepted });
+
+            svc.Simulated.Emit("0012345678", readerB, "Test reader B", isNewDevice: true);
+            Check("a second new reader takes the next free station",
+                svc.Stations.GetDeviceByKey(readerB)?.StationCode == "ST02");
+            Check("the card is now at ST02", svc.Trace.GetCurrent("0012345678")?.StationCode == "ST02");
+
+            svc.Simulated.Emit("0087654321", readerA, "Test reader A");
+            Check("later taps on a linked reader are saved",
+                svc.Trace.GetCurrent("0087654321")?.StationCode == "ST01");
+
+            svc.Stations.MoveDeviceToStation(linkedA!.Id, st3);
+            svc.Simulated.Emit("0055556666", readerA, "Test reader A");
+            Check("a moved reader records at its new station",
+                svc.Trace.GetCurrent("0055556666")?.StationCode == "ST03");
+
+            svc.Stations.SetDeviceEnabled(linkedA.Id, false);
+            svc.Simulated.Emit("0011112222", readerA, "Test reader A", isNewDevice: true);
+            Check("a disabled reader is ignored, not linked again",
+                svc.Trace.GetCurrent("0011112222") is null
+                && svc.Stations.GetDeviceByKey(readerA) is { IsEnabled: false });
+
+            svc.Settings.Set(SettingsService.AutoDetectReaders, false);
+            svc.Simulated.Emit("0033334444", readerC, "Test reader C", isNewDevice: true);
+            Check("with auto-detect off an unknown reader is ignored",
+                svc.Stations.GetDeviceByKey(readerC) is null && svc.Trace.GetCurrent("0033334444") is null);
+            svc.Settings.Set(SettingsService.AutoDetectReaders, true);
+
+            svc.Coordinator.ScanProcessed -= OnFeed;
+            svc.Stations.DeleteAllDevices();
 
             // ---- set final station -------------------------------------------------
             var st2Id = stations.First(s => s.Code == "ST02").Id;

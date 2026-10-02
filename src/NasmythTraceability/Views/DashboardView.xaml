@@ -110,7 +110,7 @@
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Time" Binding="{Binding TimeText}" Width="90" />
                             <DataGridTextColumn Header="Station" Binding="{Binding Station}" Width="80" />
-                            <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" Width="*" />
+                            <DataGridTextColumn Header="Work Order" Binding="{Binding Barcode}" Width="*" />
                             <DataGridTemplateColumn Header="Result" Width="80">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>

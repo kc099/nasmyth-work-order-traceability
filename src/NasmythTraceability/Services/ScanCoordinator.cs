@@ -55,9 +55,39 @@ public sealed class ScanCoordinator : IDisposable
 
     private void OnBarcodeScanned(object? sender, BarcodeScannedEventArgs e)
     {
-        // The reader only forwards reads from mapped scanners, so the station resolves here.
+        if (e.IsNewDevice && !TryLinkNewReader(e))
+            return;
+
         var station = _stations.ResolveStationForDevice(e.DeviceKey);
         Process(e.Barcode.Trim(), station, e.DeviceKey, e.DeviceName, manualStation: false);
+    }
+
+    /// <summary>
+    /// First tap on a reader that is not linked yet: link it to a station so this read and
+    /// every later one is recorded. Returns false when the read must be ignored.
+    /// </summary>
+    private bool TryLinkNewReader(BarcodeScannedEventArgs e)
+    {
+        if (!_settings.GetBool(SettingsService.AutoDetectReaders, true))
+            return false;
+
+        // Already linked: carry on if it is enabled, stay silent if it was switched off.
+        var existing = _stations.GetDeviceByKey(e.DeviceKey);
+        if (existing is not null)
+            return existing.IsEnabled;
+
+        var station = _stations.PickStationForNewReader();
+        if (station is null)
+        {
+            _trace.LogScan(e.Barcode, null, "", e.DeviceKey, e.DeviceName, ScanLogType.Info,
+                "New reader detected but there is no enabled station to link it to");
+            return false;
+        }
+
+        _stations.MapDeviceToStation(e.DeviceKey, e.DeviceName, station.Id);
+        _trace.LogScan("", station.Id, station.Code, e.DeviceKey, e.DeviceName, ScanLogType.Info,
+            $"New reader detected and linked to {station.Code}");
+        return true;
     }
 
     private ScanProcessedEventArgs Process(string barcode, Station? station, string deviceKey,
@@ -70,17 +100,17 @@ public sealed class ScanCoordinator : IDisposable
             if (string.IsNullOrWhiteSpace(barcode))
             {
                 _trace.LogScan(barcode, station?.Id, station?.Code ?? "", deviceKey, deviceName,
-                    ScanLogType.Error, "Empty barcode");
-                result = Make(barcode, station, ScanResult.NG, ScanOutcome.Error, "Empty barcode", deviceName, null);
+                    ScanLogType.Error, "Empty read");
+                result = Make(barcode, station, ScanResult.NG, ScanOutcome.Error, "Empty read", deviceName, null);
                 Raise(result);
                 return result;
             }
 
             if (station is null)
             {
-                // Reader normally filters these out; this only happens for a manual scan with a
-                // bad station id, or the brief window just after a scanner is mapped.
-                const string msg = "Scanner is not mapped to a station";
+                // Happens for a manual scan with a bad station id, or a reader whose station
+                // has been switched off.
+                const string msg = "Reader is not linked to an enabled station";
                 _trace.LogScan(barcode, null, "", deviceKey, deviceName, ScanLogType.Info, msg);
                 result = Make(barcode, null, ScanResult.NG, ScanOutcome.Error, msg, deviceName, null);
                 Raise(result);
@@ -91,7 +121,7 @@ public sealed class ScanCoordinator : IDisposable
             if (barcode.Length < minLen)
             {
                 _trace.LogScan(barcode, station.Id, station.Code, deviceKey, deviceName,
-                    ScanLogType.Rejected, $"Barcode shorter than {minLen} characters");
+                    ScanLogType.Rejected, $"Code shorter than {minLen} characters");
                 var t0 = _trace.Record(barcode, station, ScanResult.NG,
                     $"Too short (min {minLen})", null, deviceKey, station.IsFinal);
                 result = Make(barcode, station, ScanResult.NG, ScanOutcome.Rejected,

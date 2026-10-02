@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Interop;
 using NasmythTraceability.Helpers;
 
@@ -36,8 +37,34 @@ public partial class MainWindow : Window
             }
 
             MessageBox.Show(
-                "USB scanner input could not be initialised. You can still use manual entry.\n\n" + ex.Message,
-                "Scanner", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "USB reader input could not be initialised. You can still use manual entry.\n\n" + ex.Message,
+                "Reader", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+    }
+
+    // A keyboard-type reader also types its card number (and the closing Enter) into whatever
+    // has focus. The read is already handled through Raw Input, so drop those keystrokes here;
+    // otherwise a tap could submit the manual scan box and be recorded twice.
+    private bool IsReaderKeystroke => AppServices?.RawInput?.IsReaderTyping == true;
+
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        if (IsReaderKeystroke)
+            e.Handled = true;
+        base.OnPreviewKeyDown(e);
+    }
+
+    protected override void OnPreviewKeyUp(KeyEventArgs e)
+    {
+        if (IsReaderKeystroke)
+            e.Handled = true;
+        base.OnPreviewKeyUp(e);
+    }
+
+    protected override void OnPreviewTextInput(TextCompositionEventArgs e)
+    {
+        if (IsReaderKeystroke)
+            e.Handled = true;
+        base.OnPreviewTextInput(e);
     }
 }

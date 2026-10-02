@@ -13,7 +13,7 @@ using NasmythTraceability.Models;
 
 namespace NasmythTraceability.ViewModels;
 
-/// <summary>Backs the Settings screen: Stations, Database, Logs.</summary>
+/// <summary>Backs the Settings screen: Stations, Readers, Database, Logs.</summary>
 public sealed partial class SettingsViewModel : ObservableObject
 {
     private readonly AppServices _services;
@@ -25,10 +25,17 @@ public sealed partial class SettingsViewModel : ObservableObject
         _settings = services.Settings;
 
         ReloadStations();
+        ReloadReaders();
         ReloadLogs();
 
+        AutoDetectReaders = _settings.GetBool(SettingsService.AutoDetectReaders, true);
         DatabasePath = _services.Database.DatabasePath;
+
+        // A reader links itself on its first card tap - show it straight away.
+        _services.Stations.Changed += OnStationsChanged;
     }
+
+    private void OnStationsChanged(object? sender, EventArgs e) => ReloadReaders();
 
     // =====================================================================
     // Stations
@@ -125,6 +132,77 @@ public sealed partial class SettingsViewModel : ObservableObject
     }
 
     // =====================================================================
+    // Readers
+    // =====================================================================
+    public ObservableCollection<StationDevice> Readers { get; } = new();
+    [ObservableProperty] private StationDevice? _selectedReader;
+    [ObservableProperty] private Station? _readerTargetStation;
+    [ObservableProperty] private bool _autoDetectReaders;
+
+    partial void OnAutoDetectReadersChanged(bool value)
+    {
+        if (_settings.GetBool(SettingsService.AutoDetectReaders, true) == value)
+            return;
+        _settings.Set(SettingsService.AutoDetectReaders, value);
+        Toast(value ? "New readers are linked automatically on the first card tap."
+                    : "Automatic linking of new readers is off.");
+    }
+
+    private void ReloadReaders()
+    {
+        var keep = SelectedReader?.Id;
+        Readers.Clear();
+        foreach (var d in _services.Stations.GetDevices())
+            Readers.Add(d);
+        SelectedReader = Readers.FirstOrDefault(r => r.Id == keep) ?? Readers.FirstOrDefault();
+    }
+
+    [RelayCommand(CanExecute = nameof(IsUnlocked))]
+    private void MoveReader()
+    {
+        if (SelectedReader is null)
+        {
+            Toast("Select a reader first.");
+            return;
+        }
+
+        if (ReaderTargetStation is null || ReaderTargetStation.Id == 0)
+        {
+            Toast("Choose a saved station to move the reader to.");
+            return;
+        }
+
+        var code = ReaderTargetStation.Code;
+        _services.Stations.MoveDeviceToStation(SelectedReader.Id, ReaderTargetStation.Id);
+        Toast($"Reader moved to {code}.");
+    }
+
+    [RelayCommand(CanExecute = nameof(IsUnlocked))]
+    private void ToggleReader()
+    {
+        if (SelectedReader is null) return;
+
+        var enable = !SelectedReader.IsEnabled;
+        _services.Stations.SetDeviceEnabled(SelectedReader.Id, enable);
+        Toast(enable ? "Reader enabled." : "Reader disabled - its card taps are ignored.");
+    }
+
+    [RelayCommand(CanExecute = nameof(IsUnlocked))]
+    private void RemoveReader()
+    {
+        if (SelectedReader is null) return;
+
+        var prompt = AutoDetectReaders
+            ? "Remove this reader? It will be linked again the next time a card is tapped on it."
+            : "Remove this reader?";
+        if (Confirm(prompt) != MessageBoxResult.Yes)
+            return;
+
+        _services.Stations.DeleteDevice(SelectedReader.Id);
+        Toast("Reader removed.");
+    }
+
+    // =====================================================================
     // Database
     // =====================================================================
     [ObservableProperty] private string _databasePath = "";
@@ -163,7 +241,9 @@ public sealed partial class SettingsViewModel : ObservableObject
             _services.Database.Restore(dlg.FileName);
             _settings.Reload();
             ReloadStations();
+            ReloadReaders();
             ReloadLogs();
+            AutoDetectReaders = _settings.GetBool(SettingsService.AutoDetectReaders, true);
             Toast("Database restored.");
         }
         catch (Exception ex)
@@ -257,7 +337,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         try
         {
             using var w = new StreamWriter(dlg.FileName);
-            w.WriteLine("CreatedAt,Type,Station,Device,Barcode,Message");
+            w.WriteLine("CreatedAt,Type,Station,Device,Work Order,Message");
             foreach (var l in Logs)
                 w.WriteLine(string.Join(',',
                     Csv(l.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")), Csv(l.LogType.ToString()),
@@ -278,6 +358,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(AddStationCommand), nameof(SaveStationsCommand),
         nameof(DeleteStationCommand), nameof(SetFinalStationCommand), nameof(RestoreDatabaseCommand),
+        nameof(MoveReaderCommand), nameof(ToggleReaderCommand), nameof(RemoveReaderCommand),
         nameof(DeleteLogCommand), nameof(ClearLogsCommand), nameof(ChangePasswordCommand))]
     private bool _isUnlocked;
 
@@ -329,7 +410,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     // =====================================================================
     [ObservableProperty] private string _statusMessage = "";
 
-    /// <summary>Selected tab (0=Stations, 1=Database, 2=Logs). Lets navigation focus a section.</summary>
+    /// <summary>Selected tab (0=Stations, 1=Readers, 2=Database, 3=Logs). Lets navigation focus a section.</summary>
     [ObservableProperty] private int _settingsTabIndex;
 
     private void Toast(string message) => StatusMessage = message;
@@ -339,5 +420,6 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public void Dispose()
     {
+        _services.Stations.Changed -= OnStationsChanged;
     }
 }

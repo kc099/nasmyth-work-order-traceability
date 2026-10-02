@@ -5,9 +5,9 @@ using System.Windows.Interop;
 namespace NasmythTraceability.Services.Scanning;
 
 /// <summary>
-/// Reads USB "keyboard wedge" barcode scanners through the Win32 Raw Input API.
-/// Each keystroke is attributed to the exact HID device it came from, so multiple
-/// scanners on one PC can be told apart and mapped to different stations.
+/// Reads USB "keyboard wedge" readers (RFID card readers, barcode scanners) through the
+/// Win32 Raw Input API. Each keystroke is attributed to the exact HID device it came from,
+/// so multiple readers on one PC can be told apart and mapped to different stations.
 /// A read completes on Enter or Tab.
 /// </summary>
 public sealed class RawInputScannerService : IScannerService
@@ -27,16 +27,27 @@ public sealed class RawInputScannerService : IScannerService
 
     private const int MaxBarcodeLength = 128;
 
+    // A reader sends a whole card number in a few milliseconds per key; a person cannot
+    // type that fast. An unlinked device is treated as a reader only when every key of a
+    // read arrives within this gap and the read is at least this long.
+    private const int MaxReaderKeyGapMs = 50;
+    private const int MinAutoDetectLength = 4;
+
+    // Key events that reach the window this soon after a reader keystroke are the
+    // reader's own, see IsReaderTyping.
+    private const int ReaderKeyEchoMs = 50;
+
     private readonly Dictionary<IntPtr, StringBuilder> _buffers = new();
     private readonly Dictionary<IntPtr, string> _deviceNames = new();
+    private readonly Dictionary<IntPtr, int> _lastKeyAt = new();
     private readonly HashSet<IntPtr> _shiftDown = new();
 
-    // Only these HID devices are read as scanners. The regular keyboard is never in
-    // this set, so typing in other apps is ignored. Detection mode lifts the filter
-    // so a new scanner can be identified in Settings.
+    // These HID devices are linked readers. The regular keyboard is never in this set.
+    // Other devices are only listened to for auto-detection of a new reader.
     private readonly HashSet<string> _allowedDeviceKeys = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<string> _knownReaderIds = new();
     private readonly object _allowedLock = new();
-    private volatile bool _detectionMode;
+    private long _lastReaderKeyTick = long.MinValue / 2;
 
     private HwndSource? _source;
     private bool _disposed;
@@ -44,6 +55,18 @@ public sealed class RawInputScannerService : IScannerService
     public event EventHandler<BarcodeScannedEventArgs>? BarcodeScanned;
 
     public bool IsRunning { get; private set; }
+
+    /// <summary>
+    /// When true, a read from a device that is not linked yet but types like a reader is
+    /// raised with <see cref="BarcodeScannedEventArgs.IsNewDevice"/> set.
+    /// </summary>
+    public bool AutoDetect { get; set; } = true;
+
+    /// <summary>
+    /// True while a reader is sending a read. A keyboard-type reader also types into
+    /// whatever has focus; the window uses this to drop those keystrokes.
+    /// </summary>
+    public bool IsReaderTyping => Environment.TickCount64 - _lastReaderKeyTick <= ReaderKeyEchoMs;
 
     /// <summary>Replaces the set of scanner device paths that are read as scanners.</summary>
     public void SetAllowedDevices(IEnumerable<string> deviceKeys)
@@ -57,23 +80,31 @@ public sealed class RawInputScannerService : IScannerService
         }
     }
 
-    /// <summary>When true, every keyboard device is captured (used by the Settings "Detect" flow).</summary>
-    public void SetDetectionMode(bool on)
+    /// <summary>
+    /// Hardware ids (e.g. "VID_FFFF&amp;PID_0035") of reader models that are always treated
+    /// as readers, without the typing-speed check.
+    /// </summary>
+    public void SetKnownReaderIds(IEnumerable<string> ids)
     {
-        _detectionMode = on;
-        if (!on)
-            _buffers.Clear();
+        lock (_allowedLock)
+        {
+            _knownReaderIds.Clear();
+            foreach (var id in ids)
+                if (!string.IsNullOrWhiteSpace(id))
+                    _knownReaderIds.Add(id.Trim());
+        }
     }
 
-    private bool ShouldCapture(IntPtr device, out string deviceKey)
+    private bool IsAllowed(string deviceKey)
     {
-        deviceKey = ResolveDeviceName(device);
-        if (_detectionMode)
-            return true;
-        if (string.IsNullOrEmpty(deviceKey))
-            return false;
         lock (_allowedLock)
             return _allowedDeviceKeys.Contains(deviceKey);
+    }
+
+    private bool IsKnownReader(string deviceKey)
+    {
+        lock (_allowedLock)
+            return _knownReaderIds.Any(id => deviceKey.Contains(id, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>Hooks the given top-level window handle and registers for keyboard raw input.</summary>
@@ -131,10 +162,21 @@ public sealed class RawInputScannerService : IScannerService
             var isBreak = (kb.Flags & RI_KEY_BREAK) != 0;
             var device = raw.header.hDevice;
 
-            // Ignore everything from devices that are not mapped scanners (the PC keyboard,
-            // typing in other apps, etc.) unless we are in detection mode.
-            if (!ShouldCapture(device, out var deviceKey))
+            var deviceKey = ResolveDeviceName(device);
+            if (string.IsNullOrEmpty(deviceKey))
                 return;
+
+            // Linked readers are always read. Anything else (the PC keyboard, typing in
+            // other apps, a reader nobody has linked yet) is only watched for auto-detection.
+            var linked = IsAllowed(deviceKey);
+            if (!linked && !AutoDetect)
+                return;
+
+            // An unlinked device only counts as a reader while its keys arrive faster than a
+            // person can type, unless it is a known reader model.
+            var bySpeed = !linked && !IsKnownReader(deviceKey);
+            if (!bySpeed)
+                _lastReaderKeyTick = Environment.TickCount64;
 
             // Track shift per device (keyboard wedge sends its own shifts).
             if (kb.VKey is VK_SHIFT or VK_LSHIFT or VK_RSHIFT)
@@ -147,9 +189,31 @@ public sealed class RawInputScannerService : IScannerService
             if (isBreak || kb.VKey == 0xFF)
                 return;
 
+            _buffers.TryGetValue(device, out var sb);
+
+            // A slow key starts the read over, so ordinary typing never builds up here.
+            if (bySpeed)
+            {
+                var now = GetMessageTime();
+                if (_lastKeyAt.TryGetValue(device, out var last) && unchecked(now - last) > MaxReaderKeyGapMs)
+                    sb?.Clear();
+                _lastKeyAt[device] = now;
+            }
+
             if (kb.VKey is VK_RETURN or VK_TAB)
             {
-                Flush(device, deviceKey);
+                if (sb is null || sb.Length == 0)
+                    return;
+
+                if (bySpeed && sb.Length < MinAutoDetectLength)
+                {
+                    sb.Clear();
+                    return;
+                }
+
+                // Now known to be a reader: keep this Enter from submitting the focused box.
+                _lastReaderKeyTick = Environment.TickCount64;
+                Flush(sb, deviceKey, isNewDevice: !linked);
                 return;
             }
 
@@ -157,7 +221,7 @@ public sealed class RawInputScannerService : IScannerService
             if (ch == '\0')
                 return;
 
-            if (!_buffers.TryGetValue(device, out var sb))
+            if (sb is null)
                 _buffers[device] = sb = new StringBuilder();
 
             if (sb.Length < MaxBarcodeLength)
@@ -169,16 +233,16 @@ public sealed class RawInputScannerService : IScannerService
         }
     }
 
-    private void Flush(IntPtr device, string deviceKey)
+    private void Flush(StringBuilder sb, string deviceKey, bool isNewDevice)
     {
-        if (!_buffers.TryGetValue(device, out var sb) || sb.Length == 0)
-            return;
-
         var barcode = sb.ToString();
         sb.Clear();
 
         BarcodeScanned?.Invoke(this,
-            new BarcodeScannedEventArgs(barcode, deviceKey, FriendlyName(deviceKey), DateTime.Now));
+            new BarcodeScannedEventArgs(barcode, deviceKey, FriendlyName(deviceKey), DateTime.Now)
+            {
+                IsNewDevice = isNewDevice,
+            });
     }
 
     private string ResolveDeviceName(IntPtr device)
@@ -324,4 +388,7 @@ public sealed class RawInputScannerService : IScannerService
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint GetRawInputDeviceInfo(
         IntPtr hDevice, uint uiCommand, IntPtr pData, ref uint pcbSize);
+
+    [DllImport("user32.dll")]
+    private static extern int GetMessageTime();
 }

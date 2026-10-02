@@ -19,6 +19,12 @@ public sealed class BarcodeScannedEventArgs : EventArgs
     public string DeviceName { get; }
 
     public DateTime Timestamp { get; }
+
+    /// <summary>
+    /// True when the read came from a device that is not linked to a station yet but
+    /// behaves like a reader, so it can be linked automatically.
+    /// </summary>
+    public bool IsNewDevice { get; init; }
 }
 
 /// <summary>Source of barcode reads (real hardware or a stand-in).</summary>

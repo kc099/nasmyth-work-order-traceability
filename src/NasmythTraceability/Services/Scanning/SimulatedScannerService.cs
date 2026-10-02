@@ -13,9 +13,9 @@ public sealed class SimulatedScannerService : IScannerService
 
     public void Start() => IsRunning = true;
 
-    public void Emit(string barcode, string deviceKey, string deviceName)
+    public void Emit(string barcode, string deviceKey, string deviceName, bool isNewDevice = false)
         => BarcodeScanned?.Invoke(this,
-            new BarcodeScannedEventArgs(barcode, deviceKey, deviceName, DateTime.Now));
+            new BarcodeScannedEventArgs(barcode, deviceKey, deviceName, DateTime.Now) { IsNewDevice = isNewDevice });
 
     public void Dispose() => IsRunning = false;
 }

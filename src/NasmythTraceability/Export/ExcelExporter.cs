@@ -45,7 +45,7 @@ public static class ExcelExporter
             ("Total Scans", b.Summary.TotalScans),
             ("OK Scans", b.Summary.OkScans),
             ("NG Scans", b.Summary.NgScans),
-            ("Unique Barcodes", b.Summary.UniqueBarcodes),
+            ("Unique Work Orders", b.Summary.UniqueBarcodes),
             ("OK Rate", $"{b.Summary.OkRate:P1}"),
         };
         foreach (var (k, v) in kpis)
@@ -110,7 +110,7 @@ public static class ExcelExporter
     private static void BuildScansSheet(XLWorkbook wb, ReportBundle b)
     {
         var ws = wb.AddWorksheet("Scans");
-        string[] headers = { "Time", "Station", "Barcode", "Result", "Message" };
+        string[] headers = { "Time", "Station", "Work Order", "Result", "Message" };
         for (var c = 0; c < headers.Length; c++)
         {
             ws.Cell(1, c + 1).Value = headers[c];

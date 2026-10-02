@@ -62,7 +62,8 @@ The record is written by the scanner, not by hand, so it is accurate, time-stamp
 
 | Feature | What it means for you |
 |---|---|
-| **Multiple scanners on one PC** | Each station has its own scanner. The system knows which scanner (and so which station) every scan came from |
+| **Multiple readers on one PC** | Each station has its own RFID card reader (or barcode scanner). The system knows which reader (and so which station) every scan came from |
+| **Automatic reader detection** | A new reader is recognised and linked to a station the first time a card is tapped on it. No setup step is needed |
 | **Live station monitoring** | Coloured tiles show every station's status, its number of scans and the time of its last scan, updating live |
 | **Work order search** | Find any work order by full or partial number in seconds |
 | **Current positions list** | One list showing where every work order is right now, filterable by station |
@@ -101,8 +102,8 @@ Every scan follows the same short path, and the whole thing takes less than a se
 
 Step by step:
 
-1. **The operator scans the work order label.** Each workstation has its own USB scanner.
-2. **The system knows which station it came from.** Every scanner is linked to one station, so even with several scanners on one PC, each scan lands at the right place. Typing on an ordinary keyboard is ignored.
+1. **The operator taps the work order's RFID card on the reader** (or scans its label). Each workstation has its own USB reader.
+2. **The system knows which station it came from.** Every reader is linked to one station, so even with several readers on one PC, each scan lands at the right place. A reader that has never been used before is linked automatically on its first card tap (see [Readers](#54-settings-password-protected)). Typing on an ordinary keyboard is ignored.
 3. **Two quick checks run.**
    - If the code is too short to be real (fewer than 4 characters by default), it is recorded as **NG** (not good), the work order is marked **Rejected**, and the event is noted in the logs.
    - If the same work order was scanned at the same station a moment ago (within 5 seconds by default), for example from a double trigger pull, the repeat is ignored so it isn't counted twice. It is still noted in the logs.
@@ -174,7 +175,7 @@ Anyone can *look* at Settings, but making any change needs the administrator pas
 - **Unlocked:** the top right shows "Unlocked", a **New password** box with a **Change password** button, and a **Lock** button.
 - Settings **lock again automatically** as soon as you leave the page. Unsaved edits in the Stations table are thrown away.
 
-It has three tabs:
+It has four tabs:
 
 **Stations**
 
@@ -187,6 +188,22 @@ It has three tabs:
 | **Save changes** | Saves edits made in the table |
 | **Set as final** | Makes the selected station the final station |
 | **Delete** | Deletes the selected station. If it already has scans, you are asked to confirm, because its history is deleted too |
+
+**Readers**
+
+Lists the RFID card readers (and barcode scanners) linked to stations.
+
+A new reader needs no setup. The first time a card is tapped on it, the system links it to the first station that has no reader yet (or to the first station, if every station already has one), records that tap, and notes "New reader detected" in the logs. If it landed on the wrong station, move it here.
+
+| Item | Purpose |
+|---|---|
+| **Link a new reader automatically…** | Tick box. When off, readers that are not in the list are ignored (needs unlock) |
+| Station, Reader, Enabled, Linked on, Device ID | Which station each reader belongs to, its name, whether it is switched on, when it was linked, and its Windows device ID |
+| **Move** | Puts the selected reader on the station chosen in *Move to station* (needs unlock) |
+| **Enable / disable** | Switches the selected reader on or off. A disabled reader's card taps are ignored (needs unlock) |
+| **Remove** | Removes the selected reader. With automatic linking on, it is linked again on its next card tap (needs unlock) |
+
+The system recognises a reader in two ways: by model (the JT308 125 kHz USB card reader is built in), or by speed, because a reader sends a whole card number far faster than anyone can type. Keep each reader plugged into the same USB port; if it is moved to another port, Windows may treat it as a new reader.
 
 **Database**
 
@@ -220,7 +237,10 @@ The system checks every scan and protects its own data, so the records can be tr
 | Code too short (under 4 characters) | Saves it as **NG**, marks the work order **Rejected**, notes it in the logs | Catches misreads and partial scans |
 | Same work order scanned twice at one station within 5 seconds | Ignores the repeat and logs it as a *Duplicate* | A double trigger pull doesn't inflate counts |
 | Empty scan | Ignored and logged as an *Error* | Nothing meaningless enters the history |
-| Scan from a device that isn't a linked scanner (e.g. the PC keyboard) | Ignored completely | Typing in other programs never creates false records |
+| Typing on the PC keyboard | Ignored completely | Typing in other programs never creates false records |
+| Card tapped on a reader that is not linked yet | Links the reader to a station, records the tap, notes it in the logs | A new or replacement reader works without any setup |
+| Card tapped on a disabled reader | Ignored | A reader can be taken out of use without unplugging it |
+| Reader types its card number into a box on screen | Those keystrokes are dropped | A tap is never recorded a second time through the manual scan box |
 | Work order scanned at the **final** station | Marked **Completed** | "Done" is recorded automatically |
 | Someone tries to change Settings | Asks for the administrator password, and locks again on leaving | Stops accidental or unauthorised changes |
 | Deleting a station that has history | Warns and asks for confirmation | Prevents losing history by accident |
@@ -267,7 +287,8 @@ For most people, using the system means scanning and looking. Nobody needs to ty
 | Computer | Windows 10 or 11 (64-bit) |
 | Software to run | Microsoft .NET 8 Desktop Runtime (free from Microsoft) |
 | Software to build from source | .NET SDK 8.0 or later |
-| Scanners | USB barcode scanners that work as a "keyboard" (the most common type), set to send **Enter** after each scan |
+| Readers | USB RFID card readers (e.g. JT308, 125 kHz) or barcode scanners that work as a "keyboard" (the most common type), set to send **Enter** after each read |
+| Cards | Cards that match the reader. The JT308 reads 125 kHz EM4100 / TK4100 cards and key fobs only; 13.56 MHz cards (MIFARE, NFC, metro and bank cards) do not work |
 
 ### Starting the program
 
@@ -331,6 +352,10 @@ The project began as the *Barcode Traceability System*. It has since been reshap
 | Settings | Removed the *General* tab (app name, company name, date format, font size, start-up options) and the *USB Scanners* tab |
 | Settings | Added a **password lock**. Changes need the password, and it locks again on leaving |
 | Side menu | Removed the "USB scanners (Raw Input)" text |
+| RFID card readers | A new reader is detected and linked to a station automatically on its first card tap |
+| Settings | Added the **Readers** tab: see linked readers, move one to another station, enable/disable or remove it |
+| Dashboard / Logs / exports | The remaining "Barcode" column headings now read **Work Order** |
+| Dashboard | A reader's keystrokes no longer land in the search or manual scan boxes |
 
 ---
 
@@ -344,7 +369,8 @@ The project began as the *Barcode Traceability System*. It has since been reshap
 | Database | SQLite (Microsoft.Data.Sqlite 8.0) |
 | Excel export | ClosedXML 0.104 |
 | PDF export | PdfSharp 6.1 |
-| Scanner input | Windows Raw Input API. Every keystroke is tied to the exact USB device, so several scanners on one PC are told apart. A read ends on Enter or Tab |
+| Reader input | Windows Raw Input API. Every keystroke is tied to the exact USB device, so several readers on one PC are told apart. A read ends on Enter or Tab |
+| Reader auto-detection | An unlinked device is treated as a reader if its hardware id is in the `scanning.knownReaderIds` setting (default `VID_FFFF&PID_0035`, the JT308), or if it sends at least 4 characters plus Enter with no more than 50 ms between keys. Switched by the `scanning.autoDetectReaders` setting |
 | Configuration | `config.json` next to the program: company name, and an optional `databasePath` to move the database |
 
 ### Database tables
@@ -391,7 +417,9 @@ Note: the work order code is stored in columns named `barcode`. Only the screens
 
 | Question / problem | Answer |
 |---|---|
-| **A scan doesn't appear on the Dashboard** | Check the scanner is plugged in and linked to a station, and that the station is *Enabled*. Look in *Settings › Logs* for Error or Info entries |
+| **A scan doesn't appear on the Dashboard** | Check the reader is plugged in, listed and *Enabled* in *Settings › Readers*, and that its station is *Enabled*. Look in *Settings › Logs* for Error or Info entries |
+| **The reader's light stays red and nothing happens** | The reader is not reading the card. The card is the wrong type for the reader (see [What you need](#what-you-need)). Test in Notepad: a working card makes the reader beep and type a number |
+| **A new reader's scans show at the wrong station** | It was linked automatically to the first free station. Open *Settings › Readers*, select it, choose the right station and press *Move* |
 | **A scan shows NG** | The code was shorter than 4 characters, which usually means a misread. Rescan the label, or use Manual / Test Scan |
 | **I scanned twice but only one scan shows** | The repeat was within 5 seconds and was ignored on purpose. It appears in the logs as a Duplicate |
 | **A work order never shows Completed** | It must be scanned at the station marked *Final* in Settings › Stations |
@@ -406,10 +434,11 @@ Note: the work order code is stored in columns named `barcode`. Only the screens
 
 ## 14. Limitations and suggested next steps
 
-- **Linking a new scanner.** The screen for linking scanners to stations was removed with the USB Scanners tab. Scanners already linked keep working, but a new or replacement scanner can't be set up from the app. *Suggestion:* bring back a simple, password-protected "Add scanner" option.
+- **Card reader not yet tried with real cards.** Automatic detection and the Readers tab pass the automatic self-test, but have not been tried with a physical reader and a matching card. Check them on site: the first tap should link the reader, and the card number should not appear in the search or manual scan boxes.
+- **Card number is the work order.** The number read from the card is recorded as the work order. There is no table that translates a card to a separate work order number.
 - **Fixed display settings.** Company name, date format, font size and full-screen start-up can no longer be changed in the app. They keep their current values.
 - **One PC only.** Data lives on one computer. Other offices can't view it live, and regular off-PC backups are essential. *Suggestion:* scheduled automatic backups, or a shared network database if several PCs are needed later.
-- **Leftover "Barcode" wording.** The Dashboard Live Scan Log column, the Logs tab, and the Excel/PDF exports still use the old term, and the exports still include overall totals. *Suggestion:* finish the rename for a consistent look.
+- **Export totals.** The Excel/PDF exports still include the overall totals that were removed from the Reports screen.
 
 ---
 
