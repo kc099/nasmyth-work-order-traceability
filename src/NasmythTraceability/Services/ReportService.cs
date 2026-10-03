@@ -64,59 +64,6 @@ public sealed class ReportService
             ("$f", f), ("$t", t));
     }
 
-    /// <summary>Time trend: hourly buckets for ranges up to 2 days, otherwise daily.</summary>
-    public List<TrendPoint> GetTrend(DateTime from, DateTime to)
-    {
-        var (f, t) = Bounds(from, to);
-        var span = to.Date - from.Date;
-        var hourly = span.TotalDays <= 2;
-
-        var groupExpr = hourly
-            ? "substr(scanned_at, 1, 13)"   // yyyy-MM-dd HH
-            : "substr(scanned_at, 1, 10)";  // yyyy-MM-dd
-
-        var rows = _db.Query(
-            $"SELECT {groupExpr} AS bucket, " +
-            "  COUNT(*) AS total, " +
-            "  SUM(CASE WHEN result = 'OK' THEN 1 ELSE 0 END) AS ok, " +
-            "  SUM(CASE WHEN result = 'NG' THEN 1 ELSE 0 END) AS ng " +
-            "FROM trace_history WHERE scanned_at >= $f AND scanned_at < $t " +
-            "GROUP BY bucket ORDER BY bucket;",
-            r => (Bucket: r.GetString("bucket"), Total: r.GetInt("total"),
-                  Ok: r.GetInt("ok"), Ng: r.GetInt("ng")),
-            ("$f", f), ("$t", t));
-
-        var list = new List<TrendPoint>();
-        foreach (var row in rows)
-        {
-            DateTime bucket;
-            string label;
-            if (hourly)
-            {
-                bucket = DateTime.TryParseExact(row.Bucket + ":00:00.000", Db.DateFormat,
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    System.Globalization.DateTimeStyles.None, out var b) ? b : default;
-                label = bucket == default ? row.Bucket : bucket.ToString("dd/MM HH:00");
-            }
-            else
-            {
-                bucket = DateTime.TryParse(row.Bucket, out var b) ? b : default;
-                label = bucket == default ? row.Bucket : bucket.ToString("dd/MM");
-            }
-
-            list.Add(new TrendPoint
-            {
-                Bucket = bucket,
-                Label = label,
-                Total = row.Total,
-                Ok = row.Ok,
-                Ng = row.Ng,
-            });
-        }
-
-        return list;
-    }
-
     public List<TraceHistory> GetScans(DateTime from, DateTime to, int limit = 500)
     {
         var (f, t) = Bounds(from, to);
@@ -135,7 +82,6 @@ public sealed class ReportService
             GeneratedAt = DateTime.Now,
             Summary = GetSummary(from, to),
             ByStation = GetByStation(from, to),
-            Trend = GetTrend(from, to),
             Scans = GetScans(from, to, 5000),
         };
     }
@@ -152,5 +98,6 @@ public sealed class ReportService
         RouteId = r.GetIntOrNull("route_id"),
         DeviceKey = r.GetString("device_key"),
         ScannedAt = r.GetDate("scanned_at"),
+        ExitedAt = r.GetDateOrNull("exited_at"),
     };
 }

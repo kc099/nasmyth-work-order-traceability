@@ -1,3 +1,4 @@
+using System.Windows.Interop;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -9,7 +10,8 @@ namespace NasmythTraceability.ViewModels;
 public enum AppPage
 {
     Dashboard,
-    CurrentInformation,
+    TagAssignment,
+    ScanInformation,
     Reports,
     Settings
 }
@@ -25,6 +27,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _services = services;
 
         Dashboard = new DashboardViewModel(services);
+        TagAssignment = new TagAssignmentViewModel(services);
         Reports = new ReportsViewModel(services);
         Settings = new SettingsViewModel(services);
 
@@ -42,12 +45,22 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         };
 
         _clock = new DispatcherTimer(DispatcherPriority.Normal) { Interval = TimeSpan.FromSeconds(1) };
-        _clock.Tick += (_, _) => UpdateClock();
+        _clock.Tick += (_, _) =>
+        {
+            UpdateClock();
+
+            // A password prompt, confirmation or file dialog is the user at work, not idling.
+            if (ComponentDispatcher.IsThreadModal)
+                NotifyActivity();
+            else
+                CheckIdle(DateTime.Now);
+        };
         _clock.Start();
         UpdateClock();
     }
 
     public DashboardViewModel Dashboard { get; }
+    public TagAssignmentViewModel TagAssignment { get; }
     public ReportsViewModel Reports { get; }
     public SettingsViewModel Settings { get; }
 
@@ -66,6 +79,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>View model handed to the content region for the current page.</summary>
     public object ActiveViewModel => CurrentPage switch
     {
+        AppPage.TagAssignment => TagAssignment,
         AppPage.Reports => Reports,
         AppPage.Settings => Settings,
         _ => Dashboard,
@@ -81,10 +95,59 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         // Editing must be unlocked again each time the Settings screen is opened.
         if (value != AppPage.Settings)
             Settings.Lock();
+
+        // Tags are assigned only on the Tag Assignment page, and it locks again when left.
+        TagAssignment.SetActive(value == AppPage.TagAssignment);
+
+        // Opening a page counts as activity: its idle timeout starts now.
+        NotifyActivity();
     }
 
     [RelayCommand]
     private void Navigate(AppPage page) => CurrentPage = page;
+
+    // ---- idle timeout ---------------------------------------------------
+    // Every page except the Dashboard closes (back to the Dashboard, which also locks Settings
+    // and Tag Assignment) after a period with no key press, click or touch. A warning with a
+    // countdown is shown for the last seconds; any input dismisses it and restarts the period.
+    private const int IdleWarningSeconds = 30;
+    private DateTime _lastActivity = DateTime.Now;
+
+    [ObservableProperty] private bool _isIdleWarningVisible;
+    [ObservableProperty] private string _idleWarningText = "";
+
+    public void NotifyActivity() => NotifyActivity(DateTime.Now);
+
+    public void NotifyActivity(DateTime now)
+    {
+        _lastActivity = now;
+        IsIdleWarningVisible = false;
+    }
+
+    /// <summary>Called once a second: shows the warning, or closes the page when its time is up.</summary>
+    public void CheckIdle(DateTime now)
+    {
+        var timeout = _services.Settings.GetInt(SettingsService.PageTimeoutSeconds, 120);
+        if (CurrentPage == AppPage.Dashboard || timeout <= 0)
+        {
+            IsIdleWarningVisible = false;
+            return;
+        }
+
+        var left = timeout - (int)(now - _lastActivity).TotalSeconds;
+        if (left <= 0)
+        {
+            IsIdleWarningVisible = false;
+            CurrentPage = AppPage.Dashboard;
+            return;
+        }
+
+        if (left <= IdleWarningSeconds)
+        {
+            IdleWarningText = $"This page will close in {left} second{(left == 1 ? "" : "s")} if no key is pressed.";
+            IsIdleWarningVisible = true;
+        }
+    }
 
     private void UpdateClock()
     {
@@ -114,6 +177,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         _clock.Stop();
         Dashboard.Dispose();
+        TagAssignment.Dispose();
         Reports.Dispose();
         Settings.Dispose();
     }

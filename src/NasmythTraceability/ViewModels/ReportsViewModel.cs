@@ -11,7 +11,7 @@ using NasmythTraceability.Services;
 
 namespace NasmythTraceability.ViewModels;
 
-/// <summary>Reports &amp; Analytics: date filter, chart series and Excel/PDF export.</summary>
+/// <summary>Reports &amp; Analytics: date filter, scans-by-station chart and Excel/PDF export.</summary>
 public sealed partial class ReportsViewModel : ObservableObject, IDisposable
 {
     private readonly AppServices _services;
@@ -38,9 +38,8 @@ public sealed partial class ReportsViewModel : ObservableObject, IDisposable
     [ObservableProperty] private DateTime _fromDate;
     [ObservableProperty] private DateTime _toDate;
 
-    // ---- charts -----------------------------------------------------
+    // ---- chart ------------------------------------------------------
     public ObservableCollection<SeriesPoint> ScansByStation { get; } = new();
-    public ObservableCollection<SeriesPoint> Trend { get; } = new();
 
     // ---- export -----------------------------------------------------
     [ObservableProperty] private string _exportFolder = "";
@@ -64,26 +63,12 @@ public sealed partial class ReportsViewModel : ObservableObject, IDisposable
         foreach (var s in _services.Reports.GetByStation(FromDate, ToDate))
             ScansByStation.Add(new SeriesPoint(s.StationCode, s.Total));
 
-        Trend.Clear();
-        foreach (var p in _services.Reports.GetTrend(FromDate, ToDate))
-            Trend.Add(new SeriesPoint(p.Label, p.Total));
-
         OnPropertyChanged(nameof(RangeText));
         StatusMessage = $"Loaded {summary.TotalScans} scan(s) for {RangeText}.";
     }
 
     /// <summary>Re-runs the report - called when the Reports page is opened so it reflects deletions made elsewhere.</summary>
     public void Refresh() => Apply();
-
-    [RelayCommand]
-    private void SetQuickRange(string? days)
-    {
-        if (!int.TryParse(days, out var d))
-            return;
-        ToDate = DateTime.Today;
-        FromDate = DateTime.Today.AddDays(-d);
-        Apply();
-    }
 
     [RelayCommand(CanExecute = nameof(CanExport))]
     private Task ExportExcelAsync() => ExportAsync("xlsx");

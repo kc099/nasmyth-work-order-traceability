@@ -17,7 +17,6 @@ public static class ExcelExporter
 
         BuildSummarySheet(wb, bundle);
         BuildByStationSheet(wb, bundle);
-        BuildTrendSheet(wb, bundle);
         BuildScansSheet(wb, bundle);
 
         wb.SaveAs(path);
@@ -83,34 +82,10 @@ public static class ExcelExporter
         ws.Columns().AdjustToContents();
     }
 
-    private static void BuildTrendSheet(XLWorkbook wb, ReportBundle b)
-    {
-        var ws = wb.AddWorksheet("Trend");
-        string[] headers = { "Bucket", "Total", "OK", "NG" };
-        for (var c = 0; c < headers.Length; c++)
-        {
-            ws.Cell(1, c + 1).Value = headers[c];
-            ws.Cell(1, c + 1).Style.Font.Bold = true;
-            ws.Cell(1, c + 1).Style.Fill.BackgroundColor = XLColor.LightSteelBlue;
-        }
-
-        var row = 2;
-        foreach (var p in b.Trend)
-        {
-            ws.Cell(row, 1).Value = p.Label;
-            ws.Cell(row, 2).Value = p.Total;
-            ws.Cell(row, 3).Value = p.Ok;
-            ws.Cell(row, 4).Value = p.Ng;
-            row++;
-        }
-
-        ws.Columns().AdjustToContents();
-    }
-
     private static void BuildScansSheet(XLWorkbook wb, ReportBundle b)
     {
         var ws = wb.AddWorksheet("Scans");
-        string[] headers = { "Time", "Station", "Work Order", "Result", "Message" };
+        string[] headers = { "Time In", "Station", "Work Order", "Result", "Message", "Time Out" };
         for (var c = 0; c < headers.Length; c++)
         {
             ws.Cell(1, c + 1).Value = headers[c];
@@ -127,6 +102,11 @@ public static class ExcelExporter
             ws.Cell(row, 3).Value = s.Barcode;
             ws.Cell(row, 4).Value = s.Result.ToString();
             ws.Cell(row, 5).Value = s.Message;
+            if (s.ExitedAt is { } exit)
+            {
+                ws.Cell(row, 6).Value = exit;
+                ws.Cell(row, 6).Style.DateFormat.Format = "yyyy-mm-dd hh:mm:ss";
+            }
             row++;
         }
 

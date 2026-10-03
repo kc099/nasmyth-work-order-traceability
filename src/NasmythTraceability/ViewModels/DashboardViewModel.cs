@@ -9,7 +9,7 @@ using NasmythTraceability.Services;
 
 namespace NasmythTraceability.ViewModels;
 
-/// <summary>Live station monitoring: station tiles, scan log, counters, barcode lookup.</summary>
+/// <summary>Live station monitoring: scan log, counters, work order lookup.</summary>
 public sealed partial class DashboardViewModel : ObservableObject
 {
     private const int MaxLogRows = 200;
@@ -33,7 +33,7 @@ public sealed partial class DashboardViewModel : ObservableObject
         _services.Trace.Changed += OnTraceChanged;
     }
 
-    /// <summary>Trace data was deleted / cleared from Settings - refresh every derived view.</summary>
+    /// <summary>Trace data was deleted or cleared outside the scan flow - refresh every derived view.</summary>
     private void OnTraceChanged(object? sender, TraceChangedEventArgs e)
     {
         void Apply()
@@ -54,13 +54,6 @@ public sealed partial class DashboardViewModel : ObservableObject
                 CurrentBarcode = "";
                 CurrentStation = CurrentStatus = CurrentResult = CurrentLastScan = "-";
                 BarcodeFound = false;
-
-                foreach (var tile in StationTiles)
-                {
-                    tile.SessionScans = 0;
-                    tile.LastScanAt = null;
-                    tile.LastResult = "";
-                }
             }
         }
 
@@ -84,34 +77,12 @@ public sealed partial class DashboardViewModel : ObservableObject
             Rebuild();
     }
 
-    /// <summary>Re-reads the station list, keeping session counters and the chosen manual station.</summary>
+    /// <summary>Re-reads the station list for the Scan Information station filter.</summary>
     private void RebuildStations()
     {
-        var priorCounts = StationTiles.ToDictionary(t => t.StationId, t => (t.SessionScans, t.LastScanAt, t.LastResult));
-        var priorManualId = SelectedManualStation?.Id;
-
-        StationTiles.Clear();
-        ManualStations.Clear();
-
-        foreach (var s in _services.Stations.GetStations())
-        {
-            var tile = new StationTileViewModel(s);
-            if (priorCounts.TryGetValue(s.Id, out var prev))
-            {
-                tile.SessionScans = prev.SessionScans;
-                tile.LastScanAt = prev.LastScanAt;
-                tile.LastResult = prev.LastResult;
-            }
-            StationTiles.Add(tile);
-            ManualStations.Add(s);
-        }
-
-        SelectedManualStation = ManualStations.FirstOrDefault(s => s.Id == priorManualId)
-                                ?? ManualStations.FirstOrDefault();
-
         PositionStationOptions.Clear();
         PositionStationOptions.Add("All stations");
-        foreach (var s in ManualStations)
+        foreach (var s in _services.Stations.GetStations())
             PositionStationOptions.Add(s.Code);
         if (!PositionStationOptions.Contains(PositionStationFilter))
             PositionStationFilter = "All stations"; // setter re-runs RefreshPositions
@@ -120,10 +91,8 @@ public sealed partial class DashboardViewModel : ObservableObject
     }
 
     // ---- collections ----------------------------------------------------
-    public ObservableCollection<StationTileViewModel> StationTiles { get; } = new();
     public ObservableCollection<ScanRow> LiveScanLog { get; } = new();
     public ObservableCollection<ScanRow> History { get; } = new();
-    public ObservableCollection<Station> ManualStations { get; } = new();
 
     // ---- "which barcode is at which station right now" ------------------
     public ObservableCollection<CurrentTrace> CurrentPositions { get; } = new();
@@ -170,18 +139,18 @@ public sealed partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private int _okScans;
     [ObservableProperty] private int _ngScans;
 
-    // ---- current information ------------------------------------------
+    // ---- scan information ---------------------------------------------
     [ObservableProperty] private string _currentBarcode = "";
     [ObservableProperty] private string _currentStation = "-";
     [ObservableProperty] private string _currentStatus = "-";
     [ObservableProperty] private string _currentResult = "-";
     [ObservableProperty] private string _currentLastScan = "-";
-    [ObservableProperty] private bool _barcodeFound;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(DeleteLastScanCommand), nameof(DeleteWorkOrderScansCommand))]
+    private bool _barcodeFound;
 
-    // ---- search / simulate ------------------------------------------
+    // ---- search ------------------------------------------------------
     [ObservableProperty] private string _searchText = "";
-    [ObservableProperty] private string _simulateBarcode = "";
-    [ObservableProperty] private Station? _selectedManualStation;
 
     [ObservableProperty] private int _mappedDeviceCount;
     [ObservableProperty] private string _lastActivityText = "No scan data yet";
@@ -190,43 +159,126 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     // ---------------------------------------------------------------- commands
 
+    // ---- search as you type ------------------------------------------
+    private const int MinSuggestChars = 2;
+    private const int MaxSuggestions = 10;
+    private bool _suppressSuggestions;
+
+    public ObservableCollection<WorkOrderSuggestion> Suggestions { get; } = new();
+    [ObservableProperty] private WorkOrderSuggestion? _selectedSuggestion;
+    [ObservableProperty] private bool _isSuggestionsOpen;
+
+    partial void OnSearchTextChanged(string value)
+    {
+        if (_suppressSuggestions)
+            return;
+
+        Suggestions.Clear();
+        SelectedSuggestion = null;
+
+        var term = value.Trim();
+        if (term.Length >= MinSuggestChars)
+            foreach (var s in _services.Trace.SearchWorkOrders(term, MaxSuggestions))
+                Suggestions.Add(s);
+
+        IsSuggestionsOpen = Suggestions.Count > 0;
+    }
+
+    /// <summary>Moves the highlight in the suggestion list (arrow keys); +1 down, -1 up.</summary>
+    [RelayCommand]
+    private void MoveSuggestion(int step)
+    {
+        if (Suggestions.Count == 0)
+            return;
+
+        IsSuggestionsOpen = true;
+        var index = SelectedSuggestion is null ? -1 : Suggestions.IndexOf(SelectedSuggestion);
+        index = SelectedSuggestion is null && step < 0
+            ? Suggestions.Count - 1
+            : Math.Clamp(index + step, 0, Suggestions.Count - 1);
+        SelectedSuggestion = Suggestions[index];
+    }
+
+    [RelayCommand]
+    private void CloseSuggestions() => IsSuggestionsOpen = false;
+
+    /// <summary>Shows the chosen work order and puts its number in the search box.</summary>
+    [RelayCommand]
+    private void PickSuggestion(WorkOrderSuggestion? suggestion)
+    {
+        if (suggestion is null)
+            return;
+
+        _suppressSuggestions = true;
+        SearchText = suggestion.WorkOrder;
+        _suppressSuggestions = false;
+
+        IsSuggestionsOpen = false;
+        LoadBarcode(suggestion.WorkOrder);
+    }
+
     [RelayCommand]
     private void Search()
     {
+        // Enter on a highlighted suggestion picks it.
+        if (IsSuggestionsOpen && SelectedSuggestion is not null)
+        {
+            PickSuggestion(SelectedSuggestion);
+            return;
+        }
+
+        IsSuggestionsOpen = false;
+
         var term = SearchText.Trim();
         if (term.Length == 0)
             return;
 
-        var match = _services.Trace.GetCurrent(term)
-                    ?? _services.Trace.SearchBarcodes(term, 1).FirstOrDefault();
+        // An exact work order first, otherwise the most recent one matching by number or tag id.
+        var match = _services.Trace.GetCurrent(term)?.Barcode
+                    ?? _services.Trace.SearchWorkOrders(term, 1).FirstOrDefault()?.WorkOrder;
 
-        if (match is null)
-        {
-            BarcodeFound = false;
-            CurrentBarcode = term;
-            CurrentStation = "-";
-            CurrentStatus = "Not found";
-            CurrentResult = "-";
-            CurrentLastScan = "-";
-            History.Clear();
-            return;
-        }
-
-        LoadBarcode(match.Barcode);
-    }
-
-    [RelayCommand]
-    private void SimulateScan()
-    {
-        if (SelectedManualStation is null || string.IsNullOrWhiteSpace(SimulateBarcode))
-            return;
-
-        _services.Coordinator.SubmitManualScan(SelectedManualStation.Id, SimulateBarcode.Trim());
-        SimulateBarcode = "";
+        LoadBarcode(match ?? term);
     }
 
     [RelayCommand]
     private void ClearLog() => LiveScanLog.Clear();
+
+    // ---- correcting a mistake (administrator password) -----------------
+
+    /// <summary>Removes the most recent scan of the shown work order, e.g. a tap at the wrong reader.</summary>
+    [RelayCommand(CanExecute = nameof(BarcodeFound))]
+    private void DeleteLastScan()
+    {
+        var order = CurrentBarcode;
+        if (!BarcodeFound || History.Count == 0)
+            return;
+
+        var last = History[^1];
+        if (!Views.PasswordDialog.Confirm(
+                $"Delete the last scan of work order {order}?\n\n" +
+                $"{last.Station} at {last.DateTimeText} ({last.Result}). " +
+                "The work order goes back to where it was before that scan.", _services.Settings))
+            return;
+
+        _services.Trace.DeleteLastScan(order);
+    }
+
+    /// <summary>Removes every scan of the shown work order so it can be scanned again from the start.</summary>
+    [RelayCommand(CanExecute = nameof(BarcodeFound))]
+    private void DeleteWorkOrderScans()
+    {
+        var order = CurrentBarcode;
+        if (!BarcodeFound)
+            return;
+
+        if (!Views.PasswordDialog.Confirm(
+                $"Delete ALL {History.Count} scan(s) of work order {order}?\n\n" +
+                "Its tag assignment is kept, so it can be scanned again from the first station. " +
+                "This cannot be undone.", _services.Settings))
+            return;
+
+        _services.Trace.DeleteWorkOrder(order);
+    }
 
     [RelayCommand]
     private void RefreshDeviceInfo()
@@ -260,9 +312,6 @@ public sealed partial class DashboardViewModel : ObservableObject
 
         LastActivityText = $"{row.TimeText}  {row.Station}  {row.Barcode}  {row.Result}";
 
-        var tile = StationTiles.FirstOrDefault(t => t.StationId == (e.Station?.Id ?? -1));
-        tile?.RegisterScan(e.Timestamp, row.Result);
-
         if (e.Outcome is ScanOutcome.Accepted or ScanOutcome.Rejected)
         {
             // follow the live scan unless the operator has pinned a different unit
@@ -279,10 +328,11 @@ public sealed partial class DashboardViewModel : ObservableObject
 
         if (current is null)
         {
+            // A work order with a tag but no scan yet is known, just not started.
             BarcodeFound = false;
             CurrentBarcode = barcode;
             CurrentStation = "-";
-            CurrentStatus = "Not found";
+            CurrentStatus = _services.Tags.GetByWorkOrder(barcode) is null ? "Not found" : "Not scanned yet";
             CurrentResult = "-";
             CurrentLastScan = "-";
             return;

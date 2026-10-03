@@ -19,6 +19,7 @@ public sealed class AppServices : IDisposable
         Settings = new SettingsService(Database);
         Stations = new StationService(Database);
         Trace = new TraceService(Database);
+        Tags = new TagService(Database);
         Reports = new ReportService(Database, Settings);
         // RouteService / routes tables are retained per the design spec but are not used:
         // there is no fixed routing, only a fixed final station.
@@ -38,7 +39,7 @@ public sealed class AppServices : IDisposable
             Scanner = raw;
         }
 
-        Coordinator = new ScanCoordinator(Scanner, Stations, Trace, Settings);
+        Coordinator = new ScanCoordinator(Scanner, Stations, Trace, Tags, Settings);
 
         if (RawInput is not null)
         {
@@ -58,16 +59,14 @@ public sealed class AppServices : IDisposable
         => RawInput?.SetAllowedDevices(
             Stations.GetDevices().Where(d => d.IsEnabled).Select(d => d.DeviceKey));
 
-    /// <summary>Pushes the auto-detection settings to the raw-input reader.</summary>
+    /// <summary>
+    /// Pushes the known reader models to the raw-input reader. It always listens for readers
+    /// that are not linked yet (a reader must be heard to be assigned to a station); whether
+    /// such a reader is linked automatically is decided by the coordinator.
+    /// </summary>
     private void ApplyReaderSettings()
-    {
-        if (RawInput is null)
-            return;
-
-        RawInput.AutoDetect = Settings.GetBool(SettingsService.AutoDetectReaders, true);
-        RawInput.SetKnownReaderIds(
+        => RawInput?.SetKnownReaderIds(
             Settings.Get(SettingsService.KnownReaderIds, SettingsService.DefaultKnownReaderIds).Split(';'));
-    }
 
     public AppConfig Config { get; }
     public DatabaseService Database { get; }
@@ -75,6 +74,7 @@ public sealed class AppServices : IDisposable
     public StationService Stations { get; }
     public RouteService Routes { get; }
     public TraceService Trace { get; }
+    public TagService Tags { get; }
     public ReportService Reports { get; }
 
     public IScannerService Scanner { get; }
@@ -89,5 +89,6 @@ public sealed class AppServices : IDisposable
         Coordinator.Dispose();
         RawInput?.Dispose();
         Simulated?.Dispose();
+        Database.Dispose();
     }
 }

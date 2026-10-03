@@ -3,8 +3,7 @@ using NasmythTraceability.Models;
 namespace NasmythTraceability.Helpers;
 
 /// <summary>
-/// Generates a realistic sample dataset for testing: fake scanner mappings plus units
-/// that pass through stations in varied order over the last N days, with a mix of
+/// Generates a realistic sample dataset for testing: units that pass through stations in varied order over the last N days, with a mix of
 /// completed / in-progress units, occasional NG reads and duplicate / error log rows.
 /// </summary>
 public static class DemoData
@@ -34,14 +33,11 @@ public static class DemoData
         if (nonFinal.Count == 0)
             nonFinal = stations;
 
-        // one demo scanner per station so the USB Scanners tab shows content
+        // A made-up reader id per station for the sample scans. The readers are not assigned to
+        // the stations, so real readers can still be.
         var deviceKeys = new Dictionary<int, string>();
         foreach (var s in stations)
-        {
-            var key = $@"\\?\HID#VID_05E0&PID_1200#DEMO-{s.Code}#{{884b96c3-56ef-11d1-bc8c-00a0c91405dd}}";
-            deviceKeys[s.Id] = key;
-            svc.Stations.MapDeviceToStation(key, $"Demo scanner {s.Code}", s.Id);
-        }
+            deviceKeys[s.Id] = $@"\\?\HID#VID_05E0&PID_1200#DEMO-{s.Code}#{{884b96c3-56ef-11d1-bc8c-00a0c91405dd}}";
 
         var now = DateTime.Now;
         var from = now.AddDays(-days);

@@ -17,63 +17,44 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Title + export -->
-        <DockPanel Grid.Row="0" Margin="4,0,4,10">
-            <TextBlock Text="Reports &amp; Analytics" Style="{StaticResource H1}" />
-            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
-                <Button Style="{StaticResource OkButton}" Command="{Binding ExportExcelCommand}" Margin="0,0,8,0">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xE9F9;" FontFamily="Segoe MDL2 Assets" FontSize="12" Margin="0,0,6,0" />
-                        <TextBlock Text="Export to Excel" />
-                    </StackPanel>
-                </Button>
-                <Button Style="{StaticResource AccentButton}" Command="{Binding ExportPdfCommand}">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="12" Margin="0,0,6,0" />
-                        <TextBlock Text="Export to PDF" />
-                    </StackPanel>
-                </Button>
-            </StackPanel>
-        </DockPanel>
+        <TextBlock Grid.Row="0" Text="Reports &amp; Analytics" Style="{StaticResource H1}" Margin="4,0,4,10" />
 
-        <!-- Date filter -->
+        <!-- Date filter + export -->
         <Border Grid.Row="1" Style="{StaticResource Card}" Margin="4,0,4,10" Padding="12">
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="From" VerticalAlignment="Center" Style="{StaticResource Caption}" Margin="0,0,6,0" />
-                <DatePicker SelectedDate="{Binding FromDate}" Width="140" />
-                <TextBlock Text="To" VerticalAlignment="Center" Style="{StaticResource Caption}" Margin="14,0,6,0" />
-                <DatePicker SelectedDate="{Binding ToDate}" Width="140" />
-                <Button Content="Apply" Style="{StaticResource AccentButton}" Command="{Binding ApplyCommand}" Margin="14,0,0,0" />
-                <Border Width="1" Background="{DynamicResource AppBorderBrush}" Margin="14,2" />
-                <Button Content="Today" Command="{Binding SetQuickRangeCommand}" CommandParameter="0" Margin="0,0,6,0" />
-                <Button Content="7 days" Command="{Binding SetQuickRangeCommand}" CommandParameter="7" Margin="0,0,6,0" />
-                <Button Content="30 days" Command="{Binding SetQuickRangeCommand}" CommandParameter="30" />
-                <TextBlock Text="{Binding RangeText}" VerticalAlignment="Center" Margin="16,0,0,0"
-                           Style="{StaticResource Caption}" />
-            </StackPanel>
+            <DockPanel>
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
+                    <Button Style="{StaticResource OkButton}" Command="{Binding ExportExcelCommand}" Margin="0,0,8,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE9F9;" FontFamily="Segoe MDL2 Assets" FontSize="12" Margin="0,0,6,0" />
+                            <TextBlock Text="Export to Excel" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource AccentButton}" Command="{Binding ExportPdfCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="12" Margin="0,0,6,0" />
+                            <TextBlock Text="Export to PDF" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="From" VerticalAlignment="Center" Style="{StaticResource Caption}" Margin="0,0,6,0" />
+                    <DatePicker SelectedDate="{Binding FromDate}" Width="140" />
+                    <TextBlock Text="To" VerticalAlignment="Center" Style="{StaticResource Caption}" Margin="14,0,6,0" />
+                    <DatePicker SelectedDate="{Binding ToDate}" Width="140" />
+                    <Button Content="Apply" Style="{StaticResource AccentButton}" Command="{Binding ApplyCommand}" Margin="14,0,0,0" />
+                    <TextBlock Text="{Binding RangeText}" VerticalAlignment="Center" Margin="16,0,0,0"
+                               Style="{StaticResource Caption}" />
+                </StackPanel>
+            </DockPanel>
         </Border>
 
-        <!-- Charts -->
-        <Grid Grid.Row="2" Margin="4,4,4,0">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="*" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
-
-            <Border Grid.Row="0" Style="{StaticResource Card}" Margin="6">
-                <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="Scans by Station" Style="{StaticResource H2}" Margin="0,0,0,6" />
-                    <ctl:BarChartControl ItemsSource="{Binding ScansByStation}" EmptyText="No scans in range" MinHeight="180" />
-                </DockPanel>
-            </Border>
-
-            <Border Grid.Row="1" Style="{StaticResource Card}" Margin="6">
-                <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="Station-wise Scan Trend" Style="{StaticResource H2}" Margin="0,0,0,6" />
-                    <ctl:LineChartControl ItemsSource="{Binding Trend}" EmptyText="No scans in range" MinHeight="180" />
-                </DockPanel>
-            </Border>
-        </Grid>
+        <!-- Chart -->
+        <Border Grid.Row="2" Style="{StaticResource Card}" Margin="4,0">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="Scans by Station" Style="{StaticResource H2}" Margin="0,0,0,6" />
+                <ctl:BarChartControl ItemsSource="{Binding ScansByStation}" EmptyText="No scans in range" MinHeight="180" />
+            </DockPanel>
+        </Border>
 
         <!-- Status -->
         <Border Grid.Row="3" Margin="4,10,4,0" Padding="10,6" CornerRadius="6"

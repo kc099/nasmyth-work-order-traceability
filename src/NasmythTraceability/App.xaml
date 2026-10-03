@@ -17,10 +17,6 @@
             <conv:FractionToWidthConverter x:Key="FractionToWidth" />
             <conv:EnumMatchConverter x:Key="EnumMatch" />
             <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
-
-            <DataTemplate x:Key="StationCodeItemTemplate">
-                <TextBlock Text="{Binding Code}" Foreground="{DynamicResource AppTextPrimaryBrush}" />
-            </DataTemplate>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

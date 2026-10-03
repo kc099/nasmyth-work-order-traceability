@@ -27,6 +27,7 @@ public sealed class TraceService
 
     /// <summary>
     /// Records one trace event in <c>trace_history</c> and upserts <c>current_trace</c>.
+    /// An OK scan also logs the exit from the station the work order was at before.
     /// Pass <paramref name="at"/> to back-date the event (used by the demo data generator).
     /// </summary>
     public TraceHistory Record(string barcode, Station station, ScanResult result, string message,
@@ -37,6 +38,15 @@ public sealed class TraceService
 
         _db.InTransaction((cn, tx) =>
         {
+            // Arriving here means it has left wherever it was.
+            if (result == ScanResult.OK)
+            {
+                DatabaseService.Exec(cn, tx,
+                    "UPDATE trace_history SET exited_at = $t " +
+                    "WHERE barcode = $b AND exited_at IS NULL AND station_id <> $sid;",
+                    ("$t", Db.ToDb(now)), ("$b", barcode), ("$sid", station.Id));
+            }
+
             DatabaseService.Exec(cn, tx,
                 "INSERT INTO trace_history (barcode, station_id, station_code, result, message, route_id, device_key, scanned_at) " +
                 "VALUES ($b, $sid, $sc, $r, $m, $rt, $dk, $t);",
@@ -99,16 +109,6 @@ public sealed class TraceService
         => _db.Query("SELECT * FROM trace_history ORDER BY scanned_at DESC, id DESC LIMIT $n;",
             MapHistory, ("$n", count));
 
-    /// <summary>Was this exact barcode scanned at this station within the given window?</summary>
-    public bool IsDuplicate(string barcode, int stationId, TimeSpan window)
-    {
-        var since = Db.ToDb(DateTime.Now - window);
-        var n = _db.ScalarInt(
-            "SELECT COUNT(*) FROM trace_history WHERE barcode = $b AND station_id = $s AND scanned_at >= $since;",
-            ("$b", barcode), ("$s", stationId), ("$since", since));
-        return n > 0;
-    }
-
     public List<ScanLog> GetScanLogs(int count = 200, ScanLogType? type = null)
     {
         var sql = "SELECT * FROM scan_logs" +
@@ -117,42 +117,6 @@ public sealed class TraceService
         return type is null
             ? _db.Query(sql, MapLog, ("$n", count))
             : _db.Query(sql, MapLog, ("$t", type.ToString()), ("$n", count));
-    }
-
-    public void DeleteScanLog(long id)
-        => _db.Execute("DELETE FROM scan_logs WHERE id = $id;", ("$id", id));
-
-    /// <summary>Deletes every scan_logs row, or only those of one type. Returns rows removed.</summary>
-    public int ClearScanLogs(ScanLogType? type = null)
-        => type is null
-            ? _db.Execute("DELETE FROM scan_logs;")
-            : _db.Execute("DELETE FROM scan_logs WHERE log_type = $t;", ("$t", type.ToString()));
-
-    /// <summary>
-    /// Deletes a scan_logs row and, when it represents a recorded scan (Raw/Rejected),
-    /// the matching trace_history row too, then repairs current_trace for that barcode.
-    /// </summary>
-    public void DeleteScanLogAndTrace(ScanLog log)
-    {
-        _db.InTransaction((cn, tx) =>
-        {
-            DatabaseService.Exec(cn, tx, "DELETE FROM scan_logs WHERE id = $id;", ("$id", log.Id));
-
-            if (log.LogType is ScanLogType.Raw or ScanLogType.Rejected && !string.IsNullOrEmpty(log.RawData))
-            {
-                var lo = Db.ToDb(log.CreatedAt.AddSeconds(-2));
-                var hi = Db.ToDb(log.CreatedAt.AddSeconds(2));
-                DatabaseService.Exec(cn, tx,
-                    "DELETE FROM trace_history WHERE id IN (" +
-                    "  SELECT id FROM trace_history WHERE barcode = $b AND station_code = $sc " +
-                    "  AND scanned_at BETWEEN $lo AND $hi ORDER BY ABS(julianday(scanned_at) - julianday($at)) LIMIT 1);",
-                    ("$b", log.RawData), ("$sc", log.StationCode),
-                    ("$lo", lo), ("$hi", hi), ("$at", Db.ToDb(log.CreatedAt)));
-
-                RepairCurrentTrace(cn, tx, log.RawData);
-            }
-        });
-        RaiseChanged(cleared: false);
     }
 
     /// <summary>Deletes one trace_history row and repairs current_trace for its barcode.</summary>
@@ -169,6 +133,35 @@ public sealed class TraceService
         RaiseChanged(cleared: false);
     }
 
+    /// <summary>
+    /// Deletes the most recent scan of a work order, putting it back at the station before.
+    /// Returns false when the work order has no scans.
+    /// </summary>
+    public bool DeleteLastScan(string barcode)
+    {
+        var last = _db.ScalarOrDefault<long>(
+            "SELECT id FROM trace_history WHERE barcode = $b ORDER BY scanned_at DESC, id DESC LIMIT 1;",
+            ("$b", barcode));
+        if (last == 0)
+            return false;
+
+        DeleteTrace(last);
+        return true;
+    }
+
+    /// <summary>Deletes every scan of a work order so it can be scanned again from the start. Returns rows removed.</summary>
+    public int DeleteWorkOrder(string barcode)
+    {
+        var removed = 0;
+        _db.InTransaction((cn, tx) =>
+        {
+            removed = DatabaseService.Exec(cn, tx, "DELETE FROM trace_history WHERE barcode = $b;", ("$b", barcode));
+            DatabaseService.Exec(cn, tx, "DELETE FROM current_trace WHERE barcode = $b;", ("$b", barcode));
+        });
+        RaiseChanged(cleared: false);
+        return removed;
+    }
+
     /// <summary>Wipes all traceability data (history, current position and raw logs). Keeps stations/settings.</summary>
     public void PurgeAll()
     {
@@ -179,20 +172,6 @@ public sealed class TraceService
             DatabaseService.Exec(cn, tx, "DELETE FROM current_trace;");
         });
         RaiseChanged(cleared: true);
-    }
-
-    /// <summary>Also clears trace_history + current_trace alongside every scan_logs row.</summary>
-    public int ClearScanLogsAndTraces()
-    {
-        var removed = 0;
-        _db.InTransaction((cn, tx) =>
-        {
-            removed = DatabaseService.Exec(cn, tx, "DELETE FROM scan_logs;");
-            DatabaseService.Exec(cn, tx, "DELETE FROM trace_history;");
-            DatabaseService.Exec(cn, tx, "DELETE FROM current_trace;");
-        });
-        RaiseChanged(cleared: true);
-        return removed;
     }
 
     /// <summary>Rebuilds every <c>current_trace</c> row from the latest history row per barcode.</summary>
@@ -221,6 +200,12 @@ public sealed class TraceService
     private static void RepairCurrentTrace(Microsoft.Data.Sqlite.SqliteConnection cn,
         Microsoft.Data.Sqlite.SqliteTransaction tx, string barcode)
     {
+        // The latest surviving visit is where the work order is again, so it has not left it.
+        DatabaseService.Exec(cn, tx,
+            "UPDATE trace_history SET exited_at = NULL WHERE id = (" +
+            "  SELECT id FROM trace_history WHERE barcode = $b ORDER BY scanned_at DESC, id DESC LIMIT 1);",
+            ("$b", barcode));
+
         // Rebuild the current_trace row from the latest surviving history row, or drop it.
         DatabaseService.Exec(cn, tx, "DELETE FROM current_trace WHERE barcode = $b;", ("$b", barcode));
         DatabaseService.Exec(cn, tx,
@@ -250,12 +235,31 @@ public sealed class TraceService
         CreatedAt = r.GetDate("created_at"),
     };
 
-    public List<CurrentTrace> SearchBarcodes(string term, int limit = 50)
+    /// <summary>
+    /// Work orders for the search-as-you-type list: every one that has been scanned or has a
+    /// tag assigned, matched on part of its number or of its tag id, most recent first.
+    /// </summary>
+    public List<WorkOrderSuggestion> SearchWorkOrders(string term, int limit = 10)
     {
-        var like = "%" + term.Trim() + "%";
+        if (string.IsNullOrWhiteSpace(term))
+            return new List<WorkOrderSuggestion>();
+
         return _db.Query(
-            "SELECT * FROM current_trace WHERE barcode LIKE $q ORDER BY last_scan_at DESC LIMIT $n;",
-            MapCurrent, ("$q", like), ("$n", limit));
+            "SELECT w.work_order, a.tag_id, c.station_code, c.status " +
+            "FROM (SELECT barcode AS work_order FROM current_trace " +
+            "      UNION SELECT work_order FROM tag_assignments) w " +
+            "LEFT JOIN current_trace c ON c.barcode = w.work_order " +
+            "LEFT JOIN tag_assignments a ON a.work_order = w.work_order " +
+            "WHERE w.work_order LIKE $q OR a.tag_id LIKE $q " +
+            "ORDER BY COALESCE(c.last_scan_at, a.assigned_at) DESC, w.work_order LIMIT $n;",
+            r => new WorkOrderSuggestion
+            {
+                WorkOrder = r.GetString("work_order"),
+                TagId = r.GetString("tag_id"),
+                StationCode = r.GetString("station_code"),
+                Status = Enum.TryParse<TraceStatus>(r.GetString("status"), out var st) ? st : null,
+            },
+            ("$q", "%" + term.Trim() + "%"), ("$n", limit));
     }
 
     /// <summary>
@@ -288,6 +292,7 @@ public sealed class TraceService
         RouteId = r.GetIntOrNull("route_id"),
         DeviceKey = r.GetString("device_key"),
         ScannedAt = r.GetDate("scanned_at"),
+        ExitedAt = r.GetDateOrNull("exited_at"),
     };
 
     private static CurrentTrace MapCurrent(IDataRecord r) => new()

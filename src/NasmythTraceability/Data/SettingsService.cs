@@ -51,9 +51,19 @@ public sealed class SettingsService
     public const string SettingsPasswordHash = "security.settingsPasswordHash";
     public const string DefaultSettingsPassword = "admin";
 
+    /// <summary>
+    /// Seconds without a key press or click before a page other than the Dashboard closes.
+    /// 0 switches the timeout off.
+    /// </summary>
+    public const string PageTimeoutSeconds = "security.pageTimeoutSeconds";
+
     public static string HashPassword(string password)
         => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes("nasmyth-traceability:" + password)));
+
+    /// <summary>True when <paramref name="password"/> is the administrator (Settings) password.</summary>
+    public bool CheckPassword(string password)
+        => HashPassword(password) == Get(SettingsPasswordHash, HashPassword(DefaultSettingsPassword));
 
     // ---- read -------------------------------------------------------------
     public string Get(string key, string fallback = "")
@@ -134,6 +144,7 @@ public sealed class SettingsService
             [BaseFontSize] = "14",
             [StartFullScreen] = "false",
             [SettingsPasswordHash] = HashPassword(DefaultSettingsPassword),
+            [PageTimeoutSeconds] = "120",
         };
 
         var missing = defaults.Where(kv => !_cache.ContainsKey(kv.Key)).ToList();

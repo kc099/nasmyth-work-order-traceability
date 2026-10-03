@@ -3,7 +3,7 @@ using NasmythTraceability.Services;
 
 namespace NasmythTraceability.ViewModels;
 
-/// <summary>Flat row for the live scan log and recent-scans lists.</summary>
+/// <summary>Flat row for the live scan log and the scan history lists.</summary>
 public sealed class ScanRow
 {
     /// <summary>trace_history id when this row came from history; 0 otherwise.</summary>
@@ -15,8 +15,15 @@ public sealed class ScanRow
     public required string Result { get; init; }
     public required string Message { get; init; }
 
+    /// <summary>RFID tag that was read (live scan log only).</summary>
+    public string Tag { get; init; } = "";
+
+    /// <summary>When the work order left this station (history only); null while it is still there.</summary>
+    public DateTime? ExitTime { get; init; }
+
     public string TimeText => Time.ToString("HH:mm:ss");
     public string DateTimeText => Time.ToString("dd/MM/yyyy HH:mm:ss");
+    public string ExitText => ExitTime?.ToString("dd/MM/yyyy HH:mm:ss") ?? "-";
 
     public static ScanRow From(ScanProcessedEventArgs e)
     {
@@ -34,6 +41,7 @@ public sealed class ScanRow
             Time = e.Timestamp,
             Station = e.StationCode,
             Barcode = e.Barcode,
+            Tag = e.TagId,
             Result = result,
             Message = e.Message,
         };
@@ -47,5 +55,6 @@ public sealed class ScanRow
         Barcode = h.Barcode,
         Result = h.Result.ToString(),
         Message = h.Message,
+        ExitTime = h.ExitedAt,
     };
 }

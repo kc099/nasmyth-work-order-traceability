@@ -18,22 +18,27 @@ public sealed class StationService
 
     // ---------------------------------------------------------------- stations
 
+    // Every station read also carries the name of the reader assigned to it.
+    private const string SelectStations =
+        "SELECT s.*, (SELECT d.device_name FROM station_devices d WHERE d.station_id = s.id " +
+        "             ORDER BY d.id LIMIT 1) AS reader_name FROM stations s";
+
     public List<Station> GetStations(bool includeDisabled = true)
     {
-        var sql = "SELECT * FROM stations" +
-                  (includeDisabled ? "" : " WHERE is_enabled = 1") +
-                  " ORDER BY sequence, code;";
+        var sql = SelectStations +
+                  (includeDisabled ? "" : " WHERE s.is_enabled = 1") +
+                  " ORDER BY s.sequence, s.code;";
         return _db.Query(sql, MapStation);
     }
 
     public Station? GetStation(int id)
-        => _db.QuerySingle("SELECT * FROM stations WHERE id = $id;", MapStation, ("$id", id));
+        => _db.QuerySingle(SelectStations + " WHERE s.id = $id;", MapStation, ("$id", id));
 
     public Station? GetStationByCode(string code)
-        => _db.QuerySingle("SELECT * FROM stations WHERE code = $c;", MapStation, ("$c", code));
+        => _db.QuerySingle(SelectStations + " WHERE s.code = $c;", MapStation, ("$c", code));
 
     public Station? GetFinalStation()
-        => _db.QuerySingle("SELECT * FROM stations WHERE is_final = 1 ORDER BY sequence LIMIT 1;", MapStation);
+        => _db.QuerySingle(SelectStations + " WHERE s.is_final = 1 ORDER BY s.sequence LIMIT 1;", MapStation);
 
     public int AddStation(Station s)
     {
@@ -115,46 +120,40 @@ public sealed class StationService
         return station is { IsEnabled: true } ? station : null;
     }
 
-    public int MapDeviceToStation(string deviceKey, string deviceName, int stationId)
+    /// <summary>
+    /// Assigns a reader to a station. A station has one reader and a reader serves one
+    /// station, so the station's previous reader and the reader's previous station are released.
+    /// </summary>
+    public void MapDeviceToStation(string deviceKey, string deviceName, int stationId)
     {
-        var id = (int)_db.ExecuteReturningId(
-            "INSERT INTO station_devices (station_id, device_key, device_name, is_enabled, created_at) " +
-            "VALUES ($s, $k, $n, 1, $t) " +
-            "ON CONFLICT(device_key) DO UPDATE SET station_id = excluded.station_id, device_name = excluded.device_name;",
-            ("$s", stationId), ("$k", deviceKey), ("$n", deviceName), ("$t", Db.ToDb(DateTime.Now)));
+        _db.InTransaction((cn, tx) =>
+        {
+            DatabaseService.Exec(cn, tx,
+                "DELETE FROM station_devices WHERE station_id = $s AND device_key <> $k;",
+                ("$s", stationId), ("$k", deviceKey));
+            DatabaseService.Exec(cn, tx,
+                "INSERT INTO station_devices (station_id, device_key, device_name, is_enabled, created_at) " +
+                "VALUES ($s, $k, $n, 1, $t) " +
+                "ON CONFLICT(device_key) DO UPDATE SET station_id = excluded.station_id, " +
+                "  device_name = excluded.device_name, is_enabled = 1;",
+                ("$s", stationId), ("$k", deviceKey), ("$n", deviceName), ("$t", Db.ToDb(DateTime.Now)));
+        });
         RaiseChanged();
-        return id;
     }
 
     /// <summary>
     /// Station a newly detected reader is linked to: the first enabled station that has no
-    /// reader yet, otherwise the first enabled station. Null when no station is enabled.
+    /// reader yet. Null when every enabled station already has one.
     /// </summary>
     public Station? PickStationForNewReader()
-    {
-        var stations = GetStations(includeDisabled: false);
-        var taken = GetDevices().Select(d => d.StationId).ToHashSet();
-        return stations.FirstOrDefault(s => !taken.Contains(s.Id)) ?? stations.FirstOrDefault();
-    }
+        => GetStations(includeDisabled: false).FirstOrDefault(s => string.IsNullOrEmpty(s.ReaderName));
 
-    public void MoveDeviceToStation(int deviceId, int stationId)
+    /// <summary>Releases the reader assigned to a station. Returns false when it had none.</summary>
+    public bool RemoveStationReader(int stationId)
     {
-        _db.Execute("UPDATE station_devices SET station_id = $s WHERE id = $id;",
-            ("$s", stationId), ("$id", deviceId));
+        var n = _db.Execute("DELETE FROM station_devices WHERE station_id = $s;", ("$s", stationId));
         RaiseChanged();
-    }
-
-    public void SetDeviceEnabled(int deviceId, bool enabled)
-    {
-        _db.Execute("UPDATE station_devices SET is_enabled = $e WHERE id = $id;",
-            ("$e", enabled ? 1 : 0), ("$id", deviceId));
-        RaiseChanged();
-    }
-
-    public void DeleteDevice(int deviceId)
-    {
-        _db.Execute("DELETE FROM station_devices WHERE id = $id;", ("$id", deviceId));
-        RaiseChanged();
+        return n > 0;
     }
 
     /// <summary>Removes every scanner-to-station mapping. Returns rows removed.</summary>
@@ -176,6 +175,7 @@ public sealed class StationService
         IsEnabled = r.GetBool("is_enabled"),
         IsFinal = r.GetBool("is_final"),
         CreatedAt = r.GetDate("created_at"),
+        ReaderName = r.GetString("reader_name"),
     };
 
     private static StationDevice MapDevice(IDataRecord r) => new()

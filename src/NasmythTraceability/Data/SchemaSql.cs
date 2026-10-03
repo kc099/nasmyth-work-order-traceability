@@ -3,7 +3,8 @@ namespace NasmythTraceability.Data;
 /// <summary>DDL and seed data for the traceability database.</summary>
 internal static class SchemaSql
 {
-    public const int SchemaVersion = 1;
+    // 2: trace_history.exited_at, tag_assignments
+    public const int SchemaVersion = 2;
 
     public const string CreateSchema = """
         CREATE TABLE IF NOT EXISTS schema_info (
@@ -23,7 +24,7 @@ internal static class SchemaSql
             created_at    TEXT    NOT NULL
         );
 
-        -- USB scanner (HID device) -> station mapping.
+        -- USB reader (HID device) -> station mapping. One reader per station.
         CREATE TABLE IF NOT EXISTS station_devices (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
             station_id    INTEGER NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
@@ -65,7 +66,8 @@ internal static class SchemaSql
             message       TEXT    NOT NULL DEFAULT '',
             route_id      INTEGER REFERENCES routes(id),
             device_key    TEXT    NOT NULL DEFAULT '',
-            scanned_at    TEXT    NOT NULL
+            scanned_at    TEXT    NOT NULL,
+            exited_at     TEXT
         );
         CREATE INDEX IF NOT EXISTS ix_trace_history_barcode ON trace_history(barcode);
         CREATE INDEX IF NOT EXISTS ix_trace_history_scanned_at ON trace_history(scanned_at);
@@ -99,6 +101,13 @@ internal static class SchemaSql
         );
         CREATE INDEX IF NOT EXISTS ix_scan_logs_created_at ON scan_logs(created_at);
         CREATE INDEX IF NOT EXISTS ix_scan_logs_type ON scan_logs(log_type);
+
+        -- RFID tag -> work order. A tag carries one work order and a work order has one tag.
+        CREATE TABLE IF NOT EXISTS tag_assignments (
+            tag_id        TEXT    PRIMARY KEY,
+            work_order    TEXT    NOT NULL UNIQUE,
+            assigned_at   TEXT    NOT NULL
+        );
 
         -- Key/value application settings (Settings screen).
         CREATE TABLE IF NOT EXISTS settings (

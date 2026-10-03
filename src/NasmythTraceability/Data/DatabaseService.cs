@@ -8,9 +8,13 @@ namespace NasmythTraceability.Data;
 /// SQLite3 access layer: owns the connection string, creates/seeds the schema,
 /// and exposes small parameterised query helpers used by the services.
 /// </summary>
-public sealed class DatabaseService
+public sealed class DatabaseService : IDisposable
 {
     private readonly object _writeLock = new();
+
+    // Held open for as long as the app runs. While it is open Windows refuses to delete the
+    // database file, so it cannot be removed by mistake underneath a running app.
+    private SqliteConnection? _keepAlive;
 
     public DatabaseService(string databasePath)
     {
@@ -38,12 +42,25 @@ public sealed class DatabaseService
         return cn;
     }
 
-    /// <summary>Creates the database file, schema and first-run seed data if needed.</summary>
+    /// <summary>
+    /// Creates the database file, schema and first-run seed data if needed. A database file
+    /// that has been deleted is simply created again, empty.
+    /// </summary>
     public void Initialize()
     {
         var dir = Path.GetDirectoryName(DatabasePath);
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
+
+        // Journal files left behind by a deleted database belong to the old file and must
+        // not be replayed into the new one.
+        if (!File.Exists(DatabasePath))
+        {
+            File.Delete(DatabasePath + "-wal");
+            File.Delete(DatabasePath + "-shm");
+        }
+
+        _keepAlive ??= Open();
 
         using var cn = Open();
 
@@ -59,6 +76,16 @@ public sealed class DatabaseService
             {
                 Exec(cn, tx,
                     "INSERT INTO schema_info (id, version, applied_at) VALUES (1, $v, $t);",
+                    ("$v", SchemaSql.SchemaVersion), ("$t", Db.ToDb(DateTime.Now)));
+            }
+            else if (version < SchemaSql.SchemaVersion)
+            {
+                // Databases created before version 2 have no exit time on a station visit.
+                if (ScalarInt(cn, tx,
+                        "SELECT COUNT(*) FROM pragma_table_info('trace_history') WHERE name = 'exited_at';", 0) == 0)
+                    ExecScript(cn, tx, "ALTER TABLE trace_history ADD COLUMN exited_at TEXT;");
+
+                Exec(cn, tx, "UPDATE schema_info SET version = $v, applied_at = $t WHERE id = 1;",
                     ("$v", SchemaSql.SchemaVersion), ("$t", Db.ToDb(DateTime.Now)));
             }
 
@@ -170,6 +197,7 @@ public sealed class DatabaseService
 
         lock (_writeLock)
         {
+            ReleaseFile();
             SqliteConnection.ClearAllPools();
 
             using (var source = new SqliteConnection(
@@ -194,9 +222,23 @@ public sealed class DatabaseService
 
     public void ChangeDatabasePath(string newPath)
     {
+        ReleaseFile();
         DatabasePath = newPath;
         ConnectionString = BuildConnectionString(newPath);
     }
+
+    /// <summary>Closes every connection this service holds on the database file.</summary>
+    private void ReleaseFile()
+    {
+        if (_keepAlive is null)
+            return;
+
+        SqliteConnection.ClearPool(_keepAlive);
+        _keepAlive.Dispose();
+        _keepAlive = null;
+    }
+
+    public void Dispose() => ReleaseFile();
 
     // ---------------------------------------------------------------- internals
 

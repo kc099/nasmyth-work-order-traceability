@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using NasmythTraceability.Helpers;
+using NasmythTraceability.ViewModels;
 
 namespace NasmythTraceability.Views;
 
@@ -37,18 +38,22 @@ public partial class MainWindow : Window
             }
 
             MessageBox.Show(
-                "USB reader input could not be initialised. You can still use manual entry.\n\n" + ex.Message,
+                "USB reader input could not be initialised. Tag taps will not be read.\n\n" + ex.Message,
                 "Reader", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
     // A keyboard-type reader also types its card number (and the closing Enter) into whatever
     // has focus. The read is already handled through Raw Input, so drop those keystrokes here;
-    // otherwise a tap could submit the manual scan box and be recorded twice.
+    // otherwise a tap would type into, and submit, whichever box has the cursor.
     private bool IsReaderKeystroke => AppServices?.RawInput?.IsReaderTyping == true;
+
+    // Every key press, click, wheel turn or touch restarts the page's idle timeout.
+    private void NotifyActivity() => (DataContext as MainViewModel)?.NotifyActivity();
 
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
+        NotifyActivity();
         if (IsReaderKeystroke)
             e.Handled = true;
         base.OnPreviewKeyDown(e);
@@ -66,5 +71,23 @@ public partial class MainWindow : Window
         if (IsReaderKeystroke)
             e.Handled = true;
         base.OnPreviewTextInput(e);
+    }
+
+    protected override void OnPreviewMouseDown(MouseButtonEventArgs e)
+    {
+        NotifyActivity();
+        base.OnPreviewMouseDown(e);
+    }
+
+    protected override void OnPreviewMouseWheel(MouseWheelEventArgs e)
+    {
+        NotifyActivity();
+        base.OnPreviewMouseWheel(e);
+    }
+
+    protected override void OnPreviewTouchDown(TouchEventArgs e)
+    {
+        NotifyActivity();
+        base.OnPreviewTouchDown(e);
     }
 }

@@ -1,4 +1,4 @@
-<UserControl x:Class="NasmythTraceability.Views.CurrentInformationView"
+<UserControl x:Class="NasmythTraceability.Views.ScanInformationView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:NasmythTraceability.ViewModels"
@@ -15,7 +15,7 @@
         </Grid.RowDefinitions>
 
         <DockPanel Grid.Row="0" Margin="4,0,4,10">
-            <TextBlock Text="Current Information" Style="{StaticResource H1}" />
+            <TextBlock Text="Scan Information" Style="{StaticResource H1}" />
             <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center"
                        Style="{StaticResource Caption}">
                 <Run Text="{Binding InProgressCount, Mode=OneWay}" FontWeight="Bold"
@@ -42,7 +42,7 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="0" Text="Current Positions" Style="{StaticResource H2}" Margin="0,0,0,8" />
+                    <TextBlock Grid.Row="0" Text="Scanned Work Orders" Style="{StaticResource H2}" Margin="0,0,0,8" />
 
                     <Grid Grid.Row="1" Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
@@ -93,9 +93,10 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="0" Text="Selected work order" Style="{StaticResource H2}" Margin="0,0,0,8" />
+                    <TextBlock Grid.Row="0" Text="Scan Details" Style="{StaticResource H2}" Margin="0,0,0,8" />
 
                     <TextBlock Grid.Row="1" Text="{Binding CurrentBarcode}" FontSize="18" FontWeight="Bold"
                                TextTrimming="CharacterEllipsis" Margin="0,0,0,8" />
@@ -128,16 +129,27 @@
                     </Grid>
 
                     <DockPanel Grid.Row="3">
-                        <TextBlock DockPanel.Dock="Top" Text="Complete history" Style="{StaticResource H2}" Margin="0,0,0,6" />
+                        <TextBlock DockPanel.Dock="Top" Text="Scan History" Style="{StaticResource H2}" Margin="0,0,0,6" />
                         <DataGrid ItemsSource="{Binding History}">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Time" Binding="{Binding DateTimeText}" Width="150" />
-                                <DataGridTextColumn Header="Station" Binding="{Binding Station}" Width="80" />
+                                <DataGridTextColumn Header="Station" Binding="{Binding Station}" Width="70" />
+                                <DataGridTextColumn Header="Time In" Binding="{Binding DateTimeText}" Width="140" />
+                                <DataGridTextColumn Header="Time Out" Binding="{Binding ExitText}" Width="140" />
                                 <DataGridTextColumn Header="Result" Binding="{Binding Result}" Width="60" />
                                 <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*" />
                             </DataGrid.Columns>
                         </DataGrid>
                     </DockPanel>
+
+                    <!-- Correcting a mistake - both ask for the administrator password -->
+                    <StackPanel Grid.Row="4" Margin="0,12,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="Delete last scan" Command="{Binding DeleteLastScanCommand}" Margin="0,0,8,0" />
+                            <Button Content="Delete all scans of this work order" Command="{Binding DeleteWorkOrderScansCommand}" />
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,6,0,0"
+                                   Text="Use these to correct a wrong scan, for example a tag tapped at the final station first. The administrator password is required." />
+                    </StackPanel>
                 </Grid>
             </Border>
         </Grid>

@@ -51,4 +51,10 @@ public static class Db
     public static bool GetBool(this IDataRecord r, string name) => r.GetInt(name) != 0;
 
     public static DateTime GetDate(this IDataRecord r, string name) => FromDb(r.GetString(name));
+
+    public static DateTime? GetDateOrNull(this IDataRecord r, string name)
+    {
+        var text = r.GetString(name);
+        return string.IsNullOrWhiteSpace(text) ? null : FromDb(text);
+    }
 }
