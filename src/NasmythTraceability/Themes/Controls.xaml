@@ -140,6 +140,12 @@
                             BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
                         <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" />
                     </Border>
+                    <ControlTemplate.Triggers>
+                        <!-- Make a box that cannot be typed in look like one -->
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
@@ -161,6 +167,12 @@
                             BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
                         <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" />
                     </Border>
+                    <ControlTemplate.Triggers>
+                        <!-- Make a box that cannot be typed in look like one -->
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
@@ -283,7 +295,7 @@
     </Style>
 
     <Style x:Key="CalDayTitle" TargetType="{x:Type TextBlock}">
-        <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="FontSize" Value="11" />
         <Setter Property="HorizontalAlignment" Value="Center" />
@@ -291,7 +303,9 @@
         <Setter Property="Margin" Value="0,4" />
     </Style>
 
-    <Style TargetType="{x:Type CalendarDayButton}">
+    <!-- The Calendar template assigns these through TemplateBindings, which shuts out implicit
+         styles - so they are keyed and set explicitly on the calendar (DarkCalendar below). -->
+    <Style x:Key="DarkCalendarDayButton" TargetType="{x:Type CalendarDayButton}">
         <Setter Property="MinWidth" Value="28" />
         <Setter Property="MinHeight" Value="28" />
         <Setter Property="FontSize" Value="12" />
@@ -333,7 +347,7 @@
         </Setter>
     </Style>
 
-    <Style TargetType="{x:Type CalendarButton}">
+    <Style x:Key="DarkCalendarButton" TargetType="{x:Type CalendarButton}">
         <Setter Property="MinWidth" Value="42" />
         <Setter Property="MinHeight" Value="42" />
         <Setter Property="FontSize" Value="12" />
@@ -389,7 +403,7 @@
         </Setter>
     </Style>
 
-    <Style TargetType="{x:Type CalendarItem}">
+    <Style x:Key="DarkCalendarItem" TargetType="{x:Type CalendarItem}">
         <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
         <Setter Property="Template">
             <Setter.Value>
@@ -417,12 +431,16 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <Button x:Name="PART_PreviousButton" Grid.Column="0" Focusable="False"
-                                        Style="{StaticResource CalNavButton}" Content="&#x25C0;" />
+                                        Style="{StaticResource CalNavButton}">
+                                    <Path Data="M 7,0 L 0,6 L 7,12 Z" Fill="{DynamicResource AppTextPrimaryBrush}" Margin="2,3" />
+                                </Button>
                                 <Button x:Name="PART_HeaderButton" Grid.Column="1" Focusable="False"
                                         Style="{StaticResource CalNavButton}" FontWeight="SemiBold"
                                         HorizontalAlignment="Center" />
                                 <Button x:Name="PART_NextButton" Grid.Column="2" Focusable="False"
-                                        Style="{StaticResource CalNavButton}" Content="&#x25B6;" />
+                                        Style="{StaticResource CalNavButton}">
+                                    <Path Data="M 0,0 L 7,6 L 0,12 Z" Fill="{DynamicResource AppTextPrimaryBrush}" Margin="2,3" />
+                                </Button>
                             </Grid>
 
                             <Grid x:Name="PART_MonthView" Grid.Row="1" Margin="0,6,0,0" Visibility="Visible">
@@ -466,6 +484,9 @@
         <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
+        <Setter Property="CalendarItemStyle" Value="{StaticResource DarkCalendarItem}" />
+        <Setter Property="CalendarDayButtonStyle" Value="{StaticResource DarkCalendarDayButton}" />
+        <Setter Property="CalendarButtonStyle" Value="{StaticResource DarkCalendarButton}" />
     </Style>
     <Style TargetType="{x:Type Calendar}" BasedOn="{StaticResource DarkCalendar}" />
 
@@ -534,6 +555,12 @@
     <Style TargetType="{x:Type ScrollBar}">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Width" Value="10" />
+        <Style.Triggers>
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Width" Value="Auto" />
+                <Setter Property="Height" Value="10" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <!-- ================= CheckBox ================= -->

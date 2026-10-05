@@ -24,8 +24,6 @@ public sealed partial class DashboardViewModel : ObservableObject
 
         RebuildStations();
 
-        RefreshDeviceInfo();
-
         RefreshPositions();
 
         _services.Coordinator.ScanProcessed += OnScanProcessed;
@@ -86,8 +84,6 @@ public sealed partial class DashboardViewModel : ObservableObject
             PositionStationOptions.Add(s.Code);
         if (!PositionStationOptions.Contains(PositionStationFilter))
             PositionStationFilter = "All stations"; // setter re-runs RefreshPositions
-
-        MappedDeviceCount = _services.Stations.GetDevices().Count(d => d.IsEnabled);
     }
 
     // ---- collections ----------------------------------------------------
@@ -132,6 +128,32 @@ public sealed partial class DashboardViewModel : ObservableObject
 
         InProgressCount = rows.Count(r => r.Status == TraceStatus.InProgress);
         CompletedCount = rows.Count(r => r.Status == TraceStatus.Completed);
+
+        RefreshExceptions();
+    }
+
+    // ---- invalid and repeat scans (Scan Information) --------------------
+    // Taps that were not recorded as a station visit: tag not assigned, out of sequence,
+    // blocked or already completed (invalid), and a work order tapped again where it is (repeat).
+    public ObservableCollection<ScanLog> ScanExceptions { get; } = new();
+    public string[] ExceptionKindOptions { get; } = { AllExceptionKinds, "Invalid", "Repeat" };
+    private const string AllExceptionKinds = "Invalid and repeat";
+    [ObservableProperty] private string _exceptionKind = AllExceptionKinds;
+
+    partial void OnExceptionKindChanged(string value) => RefreshExceptions();
+
+    /// <summary>Re-reads the invalid / repeat scans with the station filter and search of the page.</summary>
+    [RelayCommand]
+    private void RefreshExceptions()
+    {
+        var station = string.IsNullOrEmpty(PositionStationFilter) || PositionStationFilter == "All stations"
+            ? null
+            : PositionStationFilter;
+        var kind = ExceptionKind is "Invalid" or "Repeat" ? ExceptionKind : null;
+
+        ScanExceptions.Clear();
+        foreach (var l in _services.Trace.GetScanExceptions(station, PositionSearch, kind))
+            ScanExceptions.Add(l);
     }
 
     // ---- counters -----------------------------------------------------
@@ -152,7 +174,6 @@ public sealed partial class DashboardViewModel : ObservableObject
     // ---- search ------------------------------------------------------
     [ObservableProperty] private string _searchText = "";
 
-    [ObservableProperty] private int _mappedDeviceCount;
     [ObservableProperty] private string _lastActivityText = "No scan data yet";
 
     public string OkRateText => TotalScans == 0 ? "0%" : ((double)OkScans / TotalScans).ToString("P0");
@@ -280,10 +301,6 @@ public sealed partial class DashboardViewModel : ObservableObject
         _services.Trace.DeleteWorkOrder(order);
     }
 
-    [RelayCommand]
-    private void RefreshDeviceInfo()
-        => MappedDeviceCount = _services.Stations.GetDevices().Count(d => d.IsEnabled);
-
     // ---------------------------------------------------------------- scan feed
 
     private void OnScanProcessed(object? sender, ScanProcessedEventArgs e)
@@ -311,6 +328,9 @@ public sealed partial class DashboardViewModel : ObservableObject
         OnPropertyChanged(nameof(OkRateText));
 
         LastActivityText = $"{row.TimeText}  {row.Station}  {row.Barcode}  {row.Result}";
+
+        if (e.Outcome is ScanOutcome.Duplicate or ScanOutcome.Error)
+            RefreshExceptions();
 
         if (e.Outcome is ScanOutcome.Accepted or ScanOutcome.Rejected)
         {

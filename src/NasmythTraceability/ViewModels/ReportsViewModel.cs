@@ -11,7 +11,7 @@ using NasmythTraceability.Services;
 
 namespace NasmythTraceability.ViewModels;
 
-/// <summary>Reports &amp; Analytics: date filter, scans-by-station chart and Excel/PDF export.</summary>
+/// <summary>Reports &amp; Analytics: date filter, valid / invalid / repeat scans per station, and Excel/PDF export of the valid scans.</summary>
 public sealed partial class ReportsViewModel : ObservableObject, IDisposable
 {
     private readonly AppServices _services;
@@ -39,7 +39,12 @@ public sealed partial class ReportsViewModel : ObservableObject, IDisposable
     [ObservableProperty] private DateTime _toDate;
 
     // ---- chart ------------------------------------------------------
-    public ObservableCollection<SeriesPoint> ScansByStation { get; } = new();
+    /// <summary>Valid, invalid and repeat scans per station.</summary>
+    public ObservableCollection<StationScanBreakdown> StationBreakdown { get; } = new();
+
+    [ObservableProperty] private int _totalValid;
+    [ObservableProperty] private int _totalInvalid;
+    [ObservableProperty] private int _totalRepeat;
 
     // ---- export -----------------------------------------------------
     [ObservableProperty] private string _exportFolder = "";
@@ -57,14 +62,18 @@ public sealed partial class ReportsViewModel : ObservableObject, IDisposable
         if (ToDate < FromDate)
             (FromDate, ToDate) = (ToDate, FromDate);
 
-        var summary = _services.Reports.GetSummary(FromDate, ToDate);
+        var rows = _services.Reports.GetScanBreakdown(FromDate, ToDate);
+        StationBreakdown.Clear();
+        foreach (var r in rows)
+            StationBreakdown.Add(r);
 
-        ScansByStation.Clear();
-        foreach (var s in _services.Reports.GetByStation(FromDate, ToDate))
-            ScansByStation.Add(new SeriesPoint(s.StationCode, s.Total));
+        TotalValid = rows.Sum(r => r.Valid);
+        TotalInvalid = rows.Sum(r => r.Invalid);
+        TotalRepeat = rows.Sum(r => r.Repeat);
 
         OnPropertyChanged(nameof(RangeText));
-        StatusMessage = $"Loaded {summary.TotalScans} scan(s) for {RangeText}.";
+        StatusMessage = $"{RangeText}: {TotalValid} valid, {TotalInvalid} invalid and {TotalRepeat} repeat scan(s). " +
+                        "Exports contain the valid scans only.";
     }
 
     /// <summary>Re-runs the report - called when the Reports page is opened so it reflects deletions made elsewhere.</summary>

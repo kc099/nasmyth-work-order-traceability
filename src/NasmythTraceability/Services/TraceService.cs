@@ -86,14 +86,45 @@ public sealed class TraceService
         };
     }
 
+    /// <summary>
+    /// Writes one scan_logs line. For a scan at a station pass <paramref name="outcome"/> (what it
+    /// came to) and the tag; lines without an outcome (reader status, exits) are not counted as scans.
+    /// </summary>
     public void LogScan(string rawData, int? stationId, string stationCode, string deviceKey,
-        string deviceName, ScanLogType type, string message, DateTime? at = null)
+        string deviceName, ScanLogType type, string message, DateTime? at = null,
+        ScanOutcome? outcome = null, string tagId = "")
     {
         _db.Execute(
-            "INSERT INTO scan_logs (raw_data, station_id, station_code, device_key, device_name, log_type, message, created_at) " +
-            "VALUES ($raw, $sid, $sc, $dk, $dn, $lt, $m, $t);",
+            "INSERT INTO scan_logs (raw_data, station_id, station_code, device_key, device_name, log_type, message, " +
+            "  outcome, tag_id, created_at) " +
+            "VALUES ($raw, $sid, $sc, $dk, $dn, $lt, $m, $o, $tag, $t);",
             ("$raw", rawData), ("$sid", stationId), ("$sc", stationCode), ("$dk", deviceKey),
-            ("$dn", deviceName), ("$lt", type.ToString()), ("$m", message), ("$t", Db.ToDb(at ?? DateTime.Now)));
+            ("$dn", deviceName), ("$lt", type.ToString()), ("$m", message), ("$o", outcome?.ToString()),
+            ("$tag", tagId), ("$t", Db.ToDb(at ?? DateTime.Now)));
+    }
+
+    /// <summary>
+    /// Station scans that were not recorded as a station visit - invalid ones (unassigned tag,
+    /// out of sequence, blocked, already completed) and repeats - newest first. Filter by
+    /// station code, part of a work order or tag, and kind ("Invalid" / "Repeat"; null = both).
+    /// </summary>
+    public List<ScanLog> GetScanExceptions(string? stationCode = null, string? search = null,
+        string? kind = null, int limit = 500)
+    {
+        var like = string.IsNullOrWhiteSpace(search) ? null : "%" + search.Trim() + "%";
+        var outcomes = kind switch
+        {
+            "Invalid" => "('Rejected','Error')",
+            "Repeat" => "('Duplicate')",
+            _ => "('Rejected','Error','Duplicate')",
+        };
+        return _db.Query(
+            "SELECT * FROM scan_logs WHERE outcome IN " + outcomes +
+            "  AND ($sc IS NULL OR station_code = $sc) " +
+            "  AND ($q IS NULL OR raw_data LIKE $q OR tag_id LIKE $q) " +
+            "ORDER BY created_at DESC, id DESC LIMIT $n;",
+            MapLog,
+            ("$sc", string.IsNullOrWhiteSpace(stationCode) ? null : stationCode), ("$q", like), ("$n", limit));
     }
 
     // ---------------------------------------------------------------- read
@@ -233,6 +264,8 @@ public sealed class TraceService
         LogType = Enum.TryParse<ScanLogType>(r.GetString("log_type"), out var t) ? t : ScanLogType.Info,
         Message = r.GetString("message"),
         CreatedAt = r.GetDate("created_at"),
+        Outcome = Enum.TryParse<ScanOutcome>(r.GetString("outcome"), out var o) ? o : null,
+        TagId = r.GetString("tag_id"),
     };
 
     /// <summary>

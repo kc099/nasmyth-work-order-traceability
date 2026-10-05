@@ -37,125 +37,87 @@ public sealed class ScanProcessedEventArgs : EventArgs
 /// </summary>
 public sealed class ScanCoordinator : IDisposable
 {
-    private readonly IScannerService _scanner;
+    private readonly IScannerService[] _scanners;
     private readonly StationService _stations;
     private readonly TraceService _trace;
     private readonly TagService _tags;
     private readonly SettingsService _settings;
     private readonly object _gate = new();
 
-    public ScanCoordinator(IScannerService scanner, StationService stations,
-        TraceService trace, TagService tags, SettingsService settings)
+    public ScanCoordinator(StationService stations, TraceService trace, TagService tags, SettingsService settings,
+        params IScannerService[] scanners)
     {
-        _scanner = scanner;
+        _scanners = scanners;
         _stations = stations;
         _trace = trace;
         _tags = tags;
         _settings = settings;
-        _scanner.BarcodeScanned += OnBarcodeScanned;
+        foreach (var s in _scanners)
+            s.BarcodeScanned += OnBarcodeScanned;
     }
 
     public event EventHandler<ScanProcessedEventArgs>? ScanProcessed;
-
-    /// <summary>
-    /// When set, every reader read is handed to this instead of being tracked. Used while a
-    /// tag is being assigned to a work order, or a reader to a station.
-    /// </summary>
-    public Action<BarcodeScannedEventArgs>? ReadInterceptor { get; set; }
 
     /// <summary>Feeds a work order straight in, without a tag. There is no screen for this; the self-test uses it.</summary>
     public ScanProcessedEventArgs SubmitManualScan(int stationId, string workOrder, string deviceName = "Manual entry")
     {
         var station = _stations.GetStation(stationId);
-        return Process(TagService.NormalizeWorkOrder(workOrder), "", station, "", deviceName);
+        return Process(TagService.NormalizeWorkOrder(workOrder), "", station, "", deviceName, DateTime.Now);
     }
 
     private void OnBarcodeScanned(object? sender, BarcodeScannedEventArgs e)
     {
-        if (ReadInterceptor is { } intercept)
-        {
-            intercept(e);
-            return;
-        }
-
-        if (e.IsNewDevice && !TryLinkNewReader(e))
-            return;
-
-        var station = _stations.ResolveStationForDevice(e.DeviceKey);
+        // A reader that belongs to a station that has been switched off is not tracked.
+        var station = e.StationId is int id && _stations.GetStation(id) is { IsEnabled: true } s ? s : null;
         var tagId = TagService.NormalizeTag(e.Barcode);
 
-        // The reader only knows the tag; the work order comes from the assignment.
+        // The reader only knows the tag; the work order comes from the assignment, keyed on the
+        // uid. The text on the card is a convenience label that anyone with a writer can change.
         var assignment = tagId.Length == 0 ? null : _tags.GetByTag(tagId);
         if (tagId.Length > 0 && assignment is null)
         {
-            const string msg = "Tag is not assigned to a work order";
-            _trace.LogScan(tagId, station?.Id, station?.Code ?? "", e.DeviceKey, e.DeviceName, ScanLogType.Error, msg);
-            Raise(Make("", tagId, station, ScanResult.NG, ScanOutcome.Error, msg, e.DeviceName, null));
+            var msg = "Tag is not assigned to a work order" +
+                      (string.IsNullOrWhiteSpace(e.CardData) ? "" : $" (card reads '{e.CardData.Trim()}')");
+            _trace.LogScan("", station?.Id, station?.Code ?? "", e.DeviceKey, e.DeviceName, ScanLogType.Error, msg,
+                e.Timestamp, ScanOutcome.Error, tagId);
+            Raise(Make("", tagId, station, ScanResult.NG, ScanOutcome.Error, msg, e.DeviceName, null, e.Timestamp));
             return;
         }
 
-        Process(assignment?.WorkOrder ?? "", tagId, station, e.DeviceKey, e.DeviceName);
-    }
-
-    /// <summary>
-    /// First tap on a reader that is not linked yet: link it to a station so this read and
-    /// every later one is recorded. Returns false when the read must be ignored.
-    /// </summary>
-    private bool TryLinkNewReader(BarcodeScannedEventArgs e)
-    {
-        if (!_settings.GetBool(SettingsService.AutoDetectReaders, true))
-            return false;
-
-        // Already linked: carry on if it is enabled, stay silent if it was switched off.
-        var existing = _stations.GetDeviceByKey(e.DeviceKey);
-        if (existing is not null)
-            return existing.IsEnabled;
-
-        var station = _stations.PickStationForNewReader();
-        if (station is null)
-        {
-            _trace.LogScan(e.Barcode, null, "", e.DeviceKey, e.DeviceName, ScanLogType.Info,
-                "New reader detected but every station already has a reader");
-            return false;
-        }
-
-        _stations.MapDeviceToStation(e.DeviceKey, e.DeviceName, station.Id);
-        _trace.LogScan("", station.Id, station.Code, e.DeviceKey, e.DeviceName, ScanLogType.Info,
-            $"New reader detected and linked to {station.Code}");
-        return true;
+        Process(assignment?.WorkOrder ?? "", tagId, station, e.DeviceKey, e.DeviceName, e.Timestamp);
     }
 
     private ScanProcessedEventArgs Process(string workOrder, string tagId, Station? station,
-        string deviceKey, string deviceName)
+        string deviceKey, string deviceName, DateTime at)
     {
         lock (_gate)
         {
             if (string.IsNullOrWhiteSpace(workOrder))
             {
                 _trace.LogScan(workOrder, station?.Id, station?.Code ?? "", deviceKey, deviceName,
-                    ScanLogType.Error, "Empty read");
+                    ScanLogType.Error, "Empty read", at, ScanOutcome.Error, tagId);
                 return Raise(Make(workOrder, tagId, station, ScanResult.NG, ScanOutcome.Error,
-                    "Empty read", deviceName, null));
+                    "Empty read", deviceName, null, at));
             }
 
             if (station is null)
             {
-                // Happens for a direct scan with a bad station id, or a reader whose station
-                // has been switched off.
-                const string msg = "Reader is not linked to an enabled station";
-                _trace.LogScan(workOrder, null, "", deviceKey, deviceName, ScanLogType.Info, msg);
-                return Raise(Make(workOrder, tagId, null, ScanResult.NG, ScanOutcome.Error, msg, deviceName, null));
+                // Happens for a direct scan with a bad station id, or a tap at a reader whose
+                // station has been switched off.
+                const string msg = "Station is disabled or no longer exists";
+                _trace.LogScan(workOrder, null, "", deviceKey, deviceName, ScanLogType.Info, msg, at, ScanOutcome.Error, tagId);
+                return Raise(Make(workOrder, tagId, null, ScanResult.NG, ScanOutcome.Error, msg, deviceName, null, at));
             }
 
             var minLen = _settings.GetInt(SettingsService.MinBarcodeLength, 4);
             if (workOrder.Length < minLen)
             {
                 _trace.LogScan(workOrder, station.Id, station.Code, deviceKey, deviceName,
-                    ScanLogType.Rejected, $"Code shorter than {minLen} characters");
+                    ScanLogType.Rejected, $"Code shorter than {minLen} characters", at, ScanOutcome.Rejected, tagId);
                 var t0 = _trace.Record(workOrder, station, ScanResult.NG,
-                    $"Too short (min {minLen})", null, deviceKey, station.IsFinal);
+                    $"Too short (min {minLen})", null, deviceKey, station.IsFinal, at);
                 return Raise(Make(workOrder, tagId, station, ScanResult.NG, ScanOutcome.Rejected,
-                    $"Too short (min {minLen})", deviceName, t0));
+                    $"Too short (min {minLen})", deviceName, t0, at));
             }
 
             var current = _trace.GetCurrent(workOrder);
@@ -178,33 +140,33 @@ public sealed class ScanCoordinator : IDisposable
             if (station.IsFinal && current is null && HasEarlierStation())
             {
                 const string msg = "Out of sequence - not scanned at an earlier station";
-                _trace.LogScan(workOrder, station.Id, station.Code, deviceKey, deviceName, ScanLogType.Rejected, msg);
-                var ng = _trace.Record(workOrder, station, ScanResult.NG, msg, null, deviceKey, isFinalStation: false);
-                return Raise(Make(workOrder, tagId, station, ScanResult.NG, ScanOutcome.Rejected, msg, deviceName, ng));
+                _trace.LogScan(workOrder, station.Id, station.Code, deviceKey, deviceName, ScanLogType.Rejected, msg, at, ScanOutcome.Rejected, tagId);
+                var ng = _trace.Record(workOrder, station, ScanResult.NG, msg, null, deviceKey, isFinalStation: false, at: at);
+                return Raise(Make(workOrder, tagId, station, ScanResult.NG, ScanOutcome.Rejected, msg, deviceName, ng, at));
             }
 
             // "Completed" is set by TraceService when the station is the final one, and the
             // exit from the previous station is stamped in the same transaction.
             var trace = _trace.Record(workOrder, station, ScanResult.OK,
-                station.IsFinal ? "Reached final station" : "", null, deviceKey, station.IsFinal);
+                station.IsFinal ? "Reached final station" : "", null, deviceKey, station.IsFinal, at);
 
             var message = station.IsFinal ? "Completed" : $"Entered {station.Code}";
-            _trace.LogScan(workOrder, station.Id, station.Code, deviceKey, deviceName, ScanLogType.Raw, message);
+            _trace.LogScan(workOrder, station.Id, station.Code, deviceKey, deviceName, ScanLogType.Raw, message, at, ScanOutcome.Accepted, tagId);
 
             if (current is not null)
             {
                 message += $" - exit from {current.StationCode} logged";
                 _trace.LogScan(workOrder, current.StationId, current.StationCode, deviceKey, deviceName,
-                    ScanLogType.Info, $"Exit from {current.StationCode}");
+                    ScanLogType.Info, $"Exit from {current.StationCode}", at);
             }
 
-            return Raise(Make(workOrder, tagId, station, ScanResult.OK, ScanOutcome.Accepted, message, deviceName, trace));
+            return Raise(Make(workOrder, tagId, station, ScanResult.OK, ScanOutcome.Accepted, message, deviceName, trace, at));
 
-            ScanProcessedEventArgs Ignore(Station at, ScanLogType logType, ScanOutcome outcome, string msg)
+            ScanProcessedEventArgs Ignore(Station st, ScanLogType logType, ScanOutcome outcome, string msg)
             {
-                _trace.LogScan(workOrder, at.Id, at.Code, deviceKey, deviceName, logType, msg);
-                return Raise(Make(workOrder, tagId, at,
-                    outcome == ScanOutcome.Duplicate ? ScanResult.OK : ScanResult.NG, outcome, msg, deviceName, null));
+                _trace.LogScan(workOrder, st.Id, st.Code, deviceKey, deviceName, logType, msg, at, outcome, tagId);
+                return Raise(Make(workOrder, tagId, st,
+                    outcome == ScanOutcome.Duplicate ? ScanResult.OK : ScanResult.NG, outcome, msg, deviceName, null, at));
             }
         }
     }
@@ -213,7 +175,7 @@ public sealed class ScanCoordinator : IDisposable
     private bool HasEarlierStation() => _stations.GetStations(includeDisabled: false).Any(s => !s.IsFinal);
 
     private static ScanProcessedEventArgs Make(string workOrder, string tagId, Station? station, ScanResult result,
-        ScanOutcome outcome, string message, string deviceName, TraceHistory? trace) => new()
+        ScanOutcome outcome, string message, string deviceName, TraceHistory? trace, DateTime at) => new()
     {
         Barcode = workOrder,
         TagId = tagId,
@@ -222,7 +184,7 @@ public sealed class ScanCoordinator : IDisposable
         Outcome = outcome,
         Message = message,
         DeviceName = deviceName,
-        Timestamp = DateTime.Now,
+        Timestamp = at,
         Trace = trace,
     };
 
@@ -232,5 +194,9 @@ public sealed class ScanCoordinator : IDisposable
         return args;
     }
 
-    public void Dispose() => _scanner.BarcodeScanned -= OnBarcodeScanned;
+    public void Dispose()
+    {
+        foreach (var s in _scanners)
+            s.BarcodeScanned -= OnBarcodeScanned;
+    }
 }

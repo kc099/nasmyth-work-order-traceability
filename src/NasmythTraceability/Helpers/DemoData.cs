@@ -75,13 +75,14 @@ public static class DemoData
 
                 svc.Trace.LogScan(barcode, st.Id, st.Code, deviceKeys[st.Id], $"Demo scanner {st.Code}",
                     isNg ? ScanLogType.Rejected : ScanLogType.Raw,
-                    isNg ? "Re-scan required" : "Accepted", t);
+                    isNg ? "Re-scan required" : "Accepted", t,
+                    isNg ? ScanOutcome.Rejected : ScanOutcome.Accepted);
                 logs++;
 
                 if (rng.NextDouble() < 0.07)
                 {
                     svc.Trace.LogScan(barcode, st.Id, st.Code, deviceKeys[st.Id], $"Demo scanner {st.Code}",
-                        ScanLogType.Duplicate, $"Repeat within 5s at {st.Code}", t.AddSeconds(2));
+                        ScanLogType.Duplicate, $"Already at {st.Code}", t.AddSeconds(2), ScanOutcome.Duplicate);
                     logs++;
                 }
 
@@ -92,13 +93,14 @@ public static class DemoData
             else inProgress++;
         }
 
-        // a handful of "unmapped scanner" error logs, spread across the window
+        // a handful of taps of tags that were never assigned, spread across the window
         var errorCount = Math.Max(3, units / 15);
         for (var i = 0; i < errorCount; i++)
         {
             var at = from.AddSeconds(rng.NextDouble() * (now - from).TotalSeconds);
-            svc.Trace.LogScan(RandomBadRead(rng), null, "", "", "unknown device",
-                ScanLogType.Error, "Scanner is not mapped to a station", at);
+            var st = stations[rng.Next(stations.Count)];
+            svc.Trace.LogScan("", st.Id, st.Code, deviceKeys[st.Id], $"Demo scanner {st.Code}",
+                ScanLogType.Error, "Tag is not assigned to a work order", at, ScanOutcome.Error, RandomTag(rng));
             logs++;
         }
 
@@ -107,10 +109,10 @@ public static class DemoData
         return new Summary(units, events, logs, completed, inProgress, ngTotal, from, now);
     }
 
-    private static string RandomBadRead(Random rng)
+    private static string RandomTag(Random rng)
     {
-        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        var len = rng.Next(1, 4);
+        const string chars = "0123456789ABCDEF";
+        const int len = 8;
         return string.Concat(Enumerable.Range(0, len).Select(_ => chars[rng.Next(chars.Length)]));
     }
 }

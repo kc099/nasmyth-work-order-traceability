@@ -31,12 +31,12 @@
 
 The Work Order Traceability System is a Windows desktop application. At any moment it tells anyone **which work order is at which station right now, and every station it has passed through**.
 
-Each work order travels with an RFID tag, and each station on the shop floor has an RFID reader. The tag is linked to the work order once. After that, tapping the tag on a station's reader records the station and the time, and the screens update straight away. Supervisors can look up any work order, see where every job currently sits, and export reports to Excel or PDF.
+Each work order travels with an RFID tag, and each station on the shop floor has a network RFID reader. A separate *work order assigning station* writes the work order onto the tag once. After that, tapping the tag on a station's reader records the station and the time, and the screens update straight away. Supervisors can look up any work order, see where every job currently sits, and export reports to Excel or PDF.
 
 | | |
 |---|---|
 | **Who uses it** | Operators (assign tags and tap them at the stations), supervisors and managers (monitor progress, look up jobs, run reports), an administrator (sets up stations and readers, corrects wrong scans, keeps the data safe) |
-| **Where it runs** | One Windows 10/11 PC on the shop floor with the USB RFID readers plugged in. No internet or server is needed |
+| **Where it runs** | One Windows 10/11 PC on the shop floor, on the same network (Wi-Fi / LAN) as the RFID readers. No internet or server is needed |
 | **What it keeps** | A complete, time-stamped history of every scan, stored on that PC |
 | **What it produces** | Live monitoring screens, a current-position list, charts, and Excel/PDF reports |
 
@@ -62,7 +62,9 @@ The record is written by the reader, not by hand, so it is accurate, time-stampe
 
 | Feature | What it means for you |
 |---|---|
-| **One reader per station** | Each station has its own RFID reader. The system knows which reader (and so which station) every tap came from |
+| **One reader per station** | Each station has its own network RFID reader, set up by its IP address. The system knows which reader (and so which station) every tap came from |
+| **Work order assigning station** | A separate reader writes the work order onto the tag and links the tag to it, in one step |
+| **Never stops scanning** | Every reader is polled all the time, whatever page is open. Taps made while a reader was unreachable, or while the program was closed, are picked up afterwards |
 | **Tag to work order assignment** | A tag is linked to a work order number once. After that the work order is tracked and searched by its own number |
 | **Entry and exit times** | Each station visit is logged with its entry time, and its exit time is logged when the tag is tapped at the next station |
 | **Sequence check** | The final station must come last. A tag tapped there first is recorded as NG so the mistake is visible |
@@ -83,14 +85,14 @@ The record is written by the reader, not by hand, so it is accurate, time-stampe
 
 ## 4. How it works
 
-A work order travels with an RFID tag. There are three steps: the tag is linked to the work order once, then it is tapped at each station.
+A work order travels with an RFID tag. There are three steps: the work order is written to the tag once at the assigning station, then the tag is tapped at each station.
 
 ```
  ┌───────────────────┐   ┌────────────────────┐   ┌─────────────────────┐
  │ 1. ASSIGN         │──▶│ 2. FIRST STATION   │──▶│ 3. FINAL STATION    │
- │ Tap the tag,      │   │ Tap the tag on     │   │ Tap the tag on      │
- │ type the work     │   │ reader 1.          │   │ the final reader.   │
- │ order number.     │   │ Entry is logged.   │   │ Exit from station 1 │
+ │ Type the work     │   │ Tap the tag on     │   │ Tap the tag on      │
+ │ order, press Write│   │ reader 1.          │   │ the final reader.   │
+ │ and tap the tag.  │   │ Entry is logged.   │   │ Exit from station 1 │
  │ (Tag Assignment)  │   │ Status: In Progress│   │ and entry here are  │
  └───────────────────┘   └────────────────────┘   │ logged. Completed.  │
                                                   └─────────────────────┘
@@ -98,14 +100,14 @@ A work order travels with an RFID tag. There are three steps: the tag is linked 
 
 Step by step:
 
-1. **Assign the tag.** On the *Tag Assignment* page, tap the tag on any reader. Its tag ID appears. Type the work order number and press **Assign**. From then on, wherever that tag is tapped, the system knows which work order it is.
-2. **Tap at the first station.** Each station has its own USB reader, so the system knows which station the tap came from. The entry is saved with date and time, and the work order shows **In Progress** at that station.
+1. **Assign the tag.** On the *Tag Assignment* page, type the work order number and press **Write to tag**, then present the tag on the *work order assigning station's* reader. The reader writes the work order onto the tag, reads it back, and the tag (by its serial number, the UID) is linked to the work order. From then on, wherever that tag is tapped, the system knows which work order it is.
+2. **Tap at the first station.** Each station has its own network reader, polled by its IP address, so the system knows which station the tap came from. The entry is saved with date and time, and the work order shows **In Progress** at that station.
 3. **Tap at the final station.** The system saves the entry at the final station and, at the same moment, logs the **exit** from the station the work order came from. The work order becomes **Completed**.
 4. **Every screen refreshes.** The live log, the work order list and the reports show each scan straight away.
 
 **The right order is: first station, then the final station.** The final station is always last, because it is the one that marks a job as done. If there are more than two stations, the ones before the final station may be visited in any order.
 
-**Example.** Tag *0012345678* is assigned to work order *WO-1001A*, tapped at ST01 at 09:05 and at the final station ST02 at 11:45:
+**Example.** Tag *04A1B2C3* is assigned to work order *WO-1001A*, tapped at ST01 at 09:05 and at the final station ST02 at 11:45:
 
 | Station | Time in | Time out | Result | Status after this scan |
 |---|---|---|---|---|
@@ -135,50 +137,68 @@ This is the everyday control-room view, the screen to leave running on the shop-
 
 ### 5.2 Tag Assignment
 
-This is where an RFID tag is linked to a work order. **The page is locked until the administrator password is entered** at the top right (the same password as Settings). While it is locked, the readers keep recording station scans as usual. **Once unlocked, the readers are in assignment mode:** a tag tapped on any reader is read here and is *not* recorded as a station scan. Press **Lock**, or leave the page, to go back to tracking. The page also locks itself when it is left or times out.
+This is where a work order is written to an RFID tag. It works **only with the work order assigning station's reader**, set up in *Settings › Assignment Station*. The production station readers are not involved: **they keep recording station scans while this page is open**. **The page is locked until the administrator password is entered** at the top right (the same password as Settings). It locks itself again when it is left or times out.
 
 | Part of the screen | What it shows / does |
 |---|---|
-| **Tag ID** | Filled in when a tag is tapped on any reader. It can also be typed. The line below says whether the tag is free or which work order it carries now |
-| **Work order number** | Type the work order. Letters and digits, with `-` `_` `/` `.` allowed inside, 4 to 40 characters. It is stored in capital letters |
-| **Assign** | Links the tag to the work order (Enter does the same). **Clear** empties both boxes |
-| **Assigned Tags** | Every tag and its work order, with the work order's status, its current station and when the tag was assigned. Use **Search** to find a tag or work order |
+| **Reader bar** | The assigning station's reader and whether it is online. If no assigning station is set up, it says so |
+| **Work order number** | Type the work order. Letters and digits, with `-` `_` `/` `.` allowed inside, 4 to 16 characters (a tag holds 16). It is stored in capital letters. It can be typed while the page is locked; the line under the box says straight away if the text is not a valid work order (green when it is) |
+| **Write to tag** | Arms the assigning reader to write the work order to the next tag presented (Enter does the same). Then present the tag on that reader. If the page is still locked, the status box says so and nothing is written |
+| **Status box** | *Waiting for tag…* with a countdown while the reader is armed; *Tag written* with the tag's UID once the reader has written and read back the work order; *Not written* with the reason otherwise |
+| **Cancel** | Stops waiting and puts the reader back in read mode |
+| **Last tag at the assignment station** | A tag presented when no write is pending is only read: its UID, the text on the card and the work order it is assigned to are shown here. Use this to check a tag |
+| **Assigned Tags** | Every tag (by UID) and its work order, with the work order's status, its current station and when the tag was assigned. Use **Search** to find a tag or work order |
 | **Remove assignment** | Unlinks the selected tag. Scans already recorded for the work order are kept |
+
+How a write works:
+
+1. **Write to tag** sends the work order to the assigning reader as a one-shot write.
+2. The next tag presented is written and read back. If that works, the tag's UID is linked to the work order and the reader returns to read mode by itself.
+3. If the write fails (the tag was lifted too early, or it is not a MIFARE Classic card), the reason is shown and **the reader stays armed**, so the tag can simply be presented again.
+4. If no tag is presented in time (30 seconds, setting `rfid.writeTimeoutSeconds`), or **Cancel** is pressed, or the page is left or locked, the reader is put back in read mode, so it never overwrites a tag by accident later.
 
 Rules for assigning:
 
 - **One tag, one work order.** A tag carries one work order at a time, and a work order has one tag.
-- **Tags are reused.** When a work order is completed, its tag can be assigned to the next work order.
-- **Moving a tag that is still in use** (its work order is not completed) asks for confirmation first.
-- **Giving a work order a different tag** asks for confirmation and replaces the old tag.
-- **A completed work order cannot be given a tag again.** Delete its scans in *Scan Information* first if it really has to be run again.
+- **The tag is identified by its UID**, its factory serial number. The work order text written on the card is a convenience label: the UID is what the stations look up.
+- **Tags are reused.** When a work order is completed, its tag can be written with the next work order. Because the card now physically carries the new work order, the link follows the card. If the tag was still in use by an unfinished work order, the status box says so and that work order is left without a tag.
+- **Giving a work order a different tag** asks for confirmation; the old tag is released.
+- **A completed work order cannot be written to a tag again.** Delete its scans in *Scan Information* first if it really has to be run again.
 
 ### 5.3 Scan Information
 
-The answer to "what is where right now?" for the whole factory.
+The answer to "what is where right now?" for the whole factory. The **Station** drop-down and the search box (part of a work order number or tag ID) filter both tabs.
 
-- **Scanned Work Orders** lists every work order the system knows about, with these columns:
+**Scanned Work Orders** tab:
+
+- Lists every work order the system knows about, with these columns:
   - **Work Order**, the code
   - **Station**, where it is now
   - **Status**: In Progress, Completed or Rejected (coloured badge)
   - **Result**, the result of its last scan (OK/NG)
   - **Scans**, how many times it has been scanned in total
   - **Last Scan**, date and time
-- Narrow the list with the **Station** drop-down, or type part of a work order number in the search box.
 - Click any row to see that work order's details and full history on the right (**Scan Details** and **Scan History**). The history shows the time in and the time out of each station.
 - **Delete last scan** removes the most recent scan of the selected work order, for example a tap at the wrong reader. The work order goes back to the station before.
 - **Delete all scans of this work order** removes everything recorded for it, so it can be scanned again from the first station. Its tag assignment is kept.
 - Both delete buttons ask for the administrator password and say exactly what will be deleted.
+
+**Invalid & Repeat Scans** tab (the number in brackets is how many are listed):
+
+- Every tap that was *not* recorded as a station visit, newest first: time, station, tag, work order (when the tag has one), type and reason.
+- **Invalid** (red): the tag is not assigned to a work order, the work order was tapped at the final station first (out of sequence), it is blocked by a rejected scan, or it is already completed.
+- **Repeat** (yellow): a valid work order tapped again at the station it is already at.
+- **Show** picks invalid and repeat, invalid only, or repeat only. The list updates as taps happen.
 
 ### 5.4 Reports & Analytics
 
 For supervisors and managers who want the bigger picture over a period of time.
 
 - **Date range.** Choose *From* and *To* dates and press **Apply**. The page opens on the last 7 days by default.
-- **Export to Excel / Export to PDF.** These buttons sit on the same row as the dates. Each saves a report for the chosen dates.
-- **Scans by Station.** A bar chart of how many scans each station handled in that period. It shows where the workload is. See [section 9](#9-reports-and-exports).
+- **Scans by Station.** For each station, three bars side by side: **Valid** (green, recorded as a station visit), **Invalid** (red) and **Repeat** (yellow), with the totals at the top right. With many stations the chart scrolls sideways.
+- **Export to Excel / Export to PDF.** These buttons sit on the same row as the dates. Each saves a report for the chosen dates containing **only valid scans**: invalid and repeat scans are left out, and the report says so. See [section 9](#9-reports-and-exports).
 
-The page refreshes automatically every time it is opened, and whenever new scans arrive.
+The page is recalculated every time it is opened and when **Apply** is pressed.
 
 ### 5.5 Settings (password protected)
 
@@ -188,31 +208,45 @@ Anyone can *look* at Settings, but making any change needs the administrator pas
 - **Unlocked:** the top right shows "Unlocked", a **New password** box with a **Change password** button, and a **Lock** button.
 - Settings **lock again automatically** as soon as you leave the page. Unsaved edits in the Stations table are thrown away.
 
-It has two tabs:
+It has three tabs:
 
 **Stations**
 
-Each station has one RFID reader. The table shows the stations and the reader assigned to each.
+Each production station has one network RFID reader (ESP32 + RC522), reached by its IP address. The table shows the stations, the address of each one's reader and whether that reader is online right now.
 
 | Column / button | Purpose |
 |---|---|
 | Code, Name, Sequence | Station identifier (e.g. ST01), display name, and display order |
-| Reader | The reader assigned to this station, or "Not assigned" |
-| Enabled | Switches the station on or off. Tag taps on the reader of a switched-off station are not recorded |
+| Reader IP address | The address of the station's reader, e.g. `192.168.1.57`. Leave it empty for a station that has no reader yet. Edit it here and press **Save changes** |
+| Reader status | Live: *Online – RFID-RW-E5F6*, *Offline – reason*, *Connecting…*, *No reader IP* or *Station disabled – not polled* |
+| Enabled | Switches the station on or off. A switched-off station's reader is not polled and its taps are not recorded |
 | Final | Shows which station is the final one (only one at a time) |
-| **Add station** | Adds a new station row |
-| **Save changes** | Saves edits made in the table |
+| **Save changes** | Saves edits made in the table. Addresses are checked first: each must be a valid IP address and no reader may serve two stations |
 | **Set as final** | Makes the selected station the final station. A scan there completes the work order |
 | **Delete** | Deletes the selected station. If it already has scans, you are asked to confirm, because its history is deleted too |
-| **Assign reader** | Select a station, press this, then tap any card on that station's reader. That reader now belongs to the station. If the reader belonged to another station, it is moved. The button reads **Cancel** while it is waiting |
-| **Remove reader** | Takes the reader away from the selected station |
-| **Link a new reader to the first station without one…** | Tick box. When on, a reader nobody has set up is linked by itself, on its first card tap, to the first station that has no reader. When off, readers are only linked with **Assign reader** |
+| **Test reader** | Asks the selected station's reader for its status and shows its name, MAC address, firmware and mode (works while locked) |
+| **Add station** box | Code, Name and **Reader IP address** for a new station, with **Test** to check the address first and **Add station** to create it. The new reader is polled straight away |
 
-For two stations: add or keep two stations, mark the second one **Final**, then use **Assign reader** on each station in turn.
+Changes take effect immediately: a reader whose address is changed is polled at the new address without restarting the program. Give every reader a **DHCP reservation** in the router so its address never changes.
 
-The system recognises a reader in two ways: by model (the JT308 125 kHz USB card reader is built in), or by speed, because a reader sends a whole card number far faster than anyone can type. Keep each reader plugged into the same USB port; if it is moved to another port, Windows may treat it as a new reader and it must be assigned again.
+**Assignment Station**
 
-**About COM ports.** The JT308 is a USB "keyboard" type reader. Windows does not give it a COM port, so readers are assigned to stations by tapping a card, not by choosing a port.
+The work order assigning station: a separate reader used only by the *Tag Assignment* page to write work orders to tags. It is never part of the production sequence and its taps are never recorded as station scans.
+
+| Item | Purpose |
+|---|---|
+| Reader IP address | The assigning reader's address. It must not be the address of a production station's reader. **Save** applies it (needs unlock) |
+| **Test reader** | Asks the reader for its status |
+| Status, Reader MAC | Live connection status, and the MAC address the reader reported |
+
+**How the readers are watched**
+
+- Every reader (all enabled stations and the assigning station) is polled about twice a second (setting `rfid.pollIntervalMs`, default 500 ms), from start-up until the program is closed, **whatever page is open**.
+- Production readers are always kept in read mode. If one is found in write mode (for example set from its web page), it is switched back, because in write mode it would overwrite every tag presented. The change is logged.
+- If a reader cannot be reached, it is shown offline and polling carries on; when it comes back, the taps it stored in the meantime (up to its last 16) are recorded with the time they were made.
+- Taps made while the program was closed are recorded on the next start, using the last event recorded for each reader.
+- If a reader restarts, or a different reader (another MAC address) answers at a station's address, it is noticed: a restart is handled automatically, and a different reader is logged as an error so it can be checked.
+- A reader whose firmware reports no MAC address (`00:00:00:00:00:00`) is identified by its IP address instead; this is logged once.
 
 **Database**
 
@@ -223,7 +257,7 @@ The system recognises a reader in two ways: by model (the JT308 125 kHz USB card
 | **Restore…** | Replaces **all** current data with a chosen backup (needs unlock, asks to confirm) |
 | **Open folder** | Opens the folder containing the database file |
 
-**About the logs.** The system still keeps a technical log of every scan event, including repeats, rejected reads and newly linked readers. It is stored in the database (the `scan_logs` table) for a technician to inspect. The application no longer has a screen for it; recorded scans are shown on the Scan Information page.
+**About the logs.** The system still keeps a technical log of every scan event, including repeats, rejected reads, readers going online or offline, and tag writes. It is stored in the database (the `scan_logs` table) for a technician to inspect. The application no longer has a screen for it; recorded scans are shown on the Scan Information page.
 
 ---
 
@@ -239,10 +273,14 @@ The system checks every scan and protects its own data, so the records can be tr
 | Tag tapped again at the station it is already at | Ignored, shown as **DUP** "Already at ST01" | Nothing. It is not counted twice |
 | Tag tapped at the final station by mistake (too early) | Recorded, and the work order shows Completed | An administrator uses **Delete last scan**. The work order goes back to the first station and its exit time is cleared |
 | Any tap of a work order that is already **Completed** | Nothing is recorded. The log shows "Work order is already completed" | Assign the tag to its next work order |
-| Tag tapped while the *Tag Assignment* page is open and unlocked | Read for assignment only, not recorded as a scan | Lock or leave the page to go back to tracking |
-| Typing on the PC keyboard | Ignored completely | Typing in other programs never creates false records |
-| Tap on a reader that is not assigned to a station | With automatic linking on, the reader is linked to the first station without a reader. Otherwise ignored | Use **Assign reader** in *Settings › Stations* |
-| Reader types its card number into a box on screen | Those keystrokes are dropped | A tap never types into, or submits, the search box |
+| Tag presented at the work order assigning station when no write is pending | Only read, and shown on the *Tag Assignment* page. Never recorded as a station scan | Nothing |
+| Station scans while the *Tag Assignment* page is open | Recorded as usual. Assigning tags never pauses the stations | Nothing |
+| A tag write fails (tag lifted too early, wrong card type) | The reason is shown and the assigning reader stays armed | Present the tag again, or press **Cancel** |
+| No tag is presented for a pending write | After 30 seconds the write is cancelled and the reader goes back to read mode | Press **Write to tag** again |
+| A station's reader cannot be reached | Shown offline in *Settings › Stations*, and logged. Polling carries on; taps the reader stored meanwhile are recorded when it is back | Check the reader's power and Wi-Fi; use **Test reader** |
+| A production reader is in write mode | Switched back to read mode at once, and logged | Do not change reader modes from the reader's own web page |
+| A different reader answers at a station's address | Its taps are still recorded for that station, its new MAC is stored, and an error is logged | Check that the right reader has that address (DHCP reservation) |
+| Typing on the PC keyboard | Has no effect on scanning: scans come only from the readers | Nothing |
 | Someone tries to change Settings | Asks for the administrator password, and locks again on leaving | Stops accidental or unauthorised changes |
 | Someone tries to delete scans | Asks for the administrator password, in a window that says exactly what will be deleted | Stops records being removed casually |
 | Someone tries to assign or unassign a tag | The *Tag Assignment* page asks for the administrator password, and locks again on leaving | Stops tags being linked to the wrong work order by anyone passing |
@@ -260,10 +298,10 @@ For most people, using the system means scanning and looking. Nobody needs to ty
 
 ### Operators
 
-1. For a new work order, open *Tag Assignment*, tap a free tag on a reader, type the work order number and press **Assign**. Then leave that page.
+1. For a new work order, open *Tag Assignment* (unlock it), type the work order number, press **Write to tag** and present a free tag on the assigning station's reader. Wait for **Tag written**.
 2. Tap the tag on the first station's reader. The scan appears at the top of the Live Scan Log with **OK**.
 3. When the work is done, tap the tag on the final station's reader. The work order is completed and the tag is free for the next work order.
-4. If a tag won't read, assign a different tag to the work order on the *Tag Assignment* page and tap that one.
+4. If a tag won't read, write the work order to a different tag on the *Tag Assignment* page and tap that one.
 
 ### Supervisors and managers
 
@@ -279,7 +317,7 @@ For most people, using the system means scanning and looking. Nobody needs to ty
 3. **Back up regularly:** *Settings › Database › Backup* saves a copy of all data. Keep copies somewhere other than this PC, such as a USB drive or network folder. A weekly backup is a sensible minimum.
 4. **Change the password** after first use. The starting password is **admin**. To change it: open *Settings*, unlock with the current password, type the new one in **New password** (4 characters or more) and press **Change password**. The same password unlocks *Tag Assignment* and confirms deleting scans.
 5. **Correct a wrong scan** in *Scan Information*: select the work order and use *Delete last scan* or *Delete all scans of this work order* (password needed).
-6. **Assign the readers** in *Settings › Stations*: select a station, press *Assign reader*, and tap a card on that station's reader.
+6. **Set up the readers:** enter each station reader's IP address in *Settings › Stations*, and the assigning reader's address in *Settings › Assignment Station*. Check each with **Test reader**; the *Reader status* column in *Settings › Stations* should show them all online.
 
 ---
 
@@ -292,8 +330,8 @@ For most people, using the system means scanning and looking. Nobody needs to ty
 | Computer | Windows 10 or 11 (64-bit) |
 | Software to run | Microsoft .NET 8 Desktop Runtime (free from Microsoft) |
 | Software to build from source | .NET SDK 8.0 or later |
-| Readers | One USB RFID card reader per station (e.g. JT308, 125 kHz), of the "keyboard" type, set to send **Enter** after each read |
-| Cards | Cards that match the reader. The JT308 reads 125 kHz EM4100 / TK4100 cards and key fobs only; 13.56 MHz cards (MIFARE, NFC, metro and bank cards) do not work |
+| Readers | One network RFID reader/writer (ESP32 + RC522, firmware with the HTTP API in README.md) per station, plus one for the work order assigning station. All on the same network as the PC, each with a fixed address (DHCP reservation) |
+| Cards | MIFARE Classic 13.56 MHz cards or fobs (1K / 4K / Mini) with the factory key. Ultralight, NTAG and DESFire cards cannot be written |
 
 ### Starting the program
 
@@ -311,19 +349,19 @@ dotnet run --project src/NasmythTraceability -c Release
   `C:\ProgramData\Nasmyth\Traceability\traceability.db`.
 - Four starting stations are created (**ST01–ST04**, with **ST04** as the final station). They can be renamed, added to or changed in Settings.
 - The settings password is set to **admin**.
-- To see the screens filled with sample data without readers, use `--seed-demo` (below). A tag ID can also be typed by hand on the *Tag Assignment* page.
+- No readers are polled until their IP addresses are entered in *Settings*.
 - To see the screens filled with sample data for training, run the program once with `--seed-demo` (see [section 12](#12-under-the-hood-technical-reference)).
 
 ---
 
 ## 9. Reports and exports
 
-Reports are created from **Reports & Analytics** for the selected date range.
+Reports are created from **Reports & Analytics** for the selected date range. **They contain valid scans only** - every station visit that was recorded. Invalid scans (unassigned tag, out of sequence, blocked, already completed) and repeat scans are left out; they can be seen on screen in *Scan Information* and in the Reports chart. Each report carries the note "Valid scans only. Invalid and repeat scans are not included."
 
 | | Excel (.xlsx) | PDF |
 |---|---|---|
 | Best for | Further analysis, filtering, sharing numbers | Printing, emailing, archiving |
-| Contents | Sheets: **Summary**, **Scans by Station**, **Scans** (every scan in the period) | Company header, summary figures, scans by station, and scan detail pages |
+| Contents | Sheets: **Summary** (valid scans, work orders), **Scans by Station** (valid scans per station), **Scans** (every valid station visit in the period, with time in and time out) | Company header, summary figures, valid scans by station, and scan detail pages |
 
 - Files are saved to **Documents › Nasmyth Traceability › Exports**.
 - File names include the date range and time created, for example
@@ -335,7 +373,8 @@ Reports are created from **Reports & Analytics** for the selected date range.
 ## 10. Data, backups and security
 
 - **Where data lives:** one database file on the shop-floor PC (`C:\ProgramData\Nasmyth\Traceability\traceability.db`). Nothing is sent over the internet.
-- **What is stored:** stations, the reader assigned to each station, tag-to-work-order assignments, every scan with its entry and exit time (history), the current position of each work order, logs, and settings.
+- **Reader network:** the readers have no password of their own (see README.md): anyone on the same network can change their mode. Keep them on a trusted shop-floor network and close their web pages in production.
+- **What is stored:** stations with the IP address and MAC of each station's reader, the assigning station's reader, tag-to-work-order assignments, every scan with its entry and exit time (history), the current position of each work order, logs, and settings.
 - **Backups:** use *Settings › Database › Backup*. The file is named like `traceability_backup_20260926_101530.db`. Store copies away from the PC.
 - **Restore:** replaces all current data with the backup's data, including the settings password saved in that backup.
 - **Password:** one administrator password protects all changes in Settings. It is stored as a one-way scrambled code (SHA-256 hash), not as readable text. If it is forgotten, a technician can reset it in the database.
@@ -381,6 +420,21 @@ The project began as the *Barcode Traceability System*. It has since been reshap
 | All pages | Idle timeout: a page other than the Dashboard closes after 120 seconds without a key press or click, with a 30-second warning |
 | Database | Upgraded automatically on first start: exit time column and tag assignment table |
 | Database | The database file can no longer be deleted while the application is running. If it is deleted while the application is closed, a new empty one is created on the next start |
+| RFID readers | The USB keyboard-type readers are replaced by **network RFID reader/writers** (ESP32 + RC522). Each station's reader is set up by its IP address in *Settings › Stations*, including in the new **Add station** box |
+| Scanning | Every reader is polled continuously, whatever page is open. Taps made while a reader was unreachable, or while the program was closed, are recorded afterwards. Production readers are kept in read mode |
+| Scanning | A tag is identified by its UID. The work order text on the card is only shown, never trusted on its own |
+| Tag Assignment | Works only with the new **work order assigning station**: type the work order, press **Write to tag**, present the tag; once the reader confirms the write, the tag is linked. The production readers keep scanning while the page is open |
+| Settings | New **Assignment Station** tab, **Test reader** buttons and a live reader status column. *Assign reader*, *Remove reader* and automatic reader linking are gone |
+| Work orders | At most 16 characters, the capacity of a tag |
+| Database | Upgraded automatically to version 3: reader address and MAC per station, and a table remembering the last event read from each reader |
+| Dashboard | Reader status chips removed (they do not scale to hundreds of readers). Reader status is shown in *Settings* only |
+| Scan Information | New **Invalid & Repeat Scans** tab: unassigned tags, out-of-sequence, blocked and completed work orders, and repeat taps |
+| Reports & Analytics | The chart shows **valid, invalid and repeat** scans per station side by side, and scrolls sideways for many stations |
+| Excel / PDF export | Reports contain **valid scans only**; invalid and repeat scans are left out, and the report says so |
+| Reports & Analytics | The date pickers' weekday names and month arrows are now clearly visible |
+| Tag Assignment | The work order can be typed while the page is locked, with an immediate check of what is typed; text boxes that cannot be used now look greyed out |
+| RFID readers | Readers whose firmware reports MAC `00:00:00:00:00:00` are identified by their IP address instead |
+| Database | Upgraded automatically to version 4: each scan in the log records what it came to (valid / invalid / repeat) and the tag |
 
 ---
 
@@ -394,8 +448,8 @@ The project began as the *Barcode Traceability System*. It has since been reshap
 | Database | SQLite (Microsoft.Data.Sqlite 8.0) |
 | Excel export | ClosedXML 0.104 |
 | PDF export | PdfSharp 6.1 |
-| Reader input | Windows Raw Input API. Every keystroke is tied to the exact USB device, so several readers on one PC are told apart. A read ends on Enter or Tab |
-| Reader auto-detection | An unlinked device is treated as a reader if its hardware id is in the `scanning.knownReaderIds` setting (default `VID_FFFF&PID_0035`, the JT308), or if it sends at least 4 characters plus Enter with no more than 50 ms between keys. Switched by the `scanning.autoDetectReaders` setting |
+| Readers | Network RFID reader/writers (ESP32 + RC522), HTTP + JSON on port 80, API in README.md. One polling loop per reader (`GET /api/events?since=`, every `rfid.pollIntervalMs`, default 500 ms, 4 s timeout). Requests to one reader never overlap. Events are timestamped from the reader's uptime |
+| Tag writing | `POST /api/mode` with `{"mode":"write","data":"<work order>","once":true}`, then wait for a `write` event newer than the reply's `lastEventId`. Timeout `rfid.writeTimeoutSeconds` (default 30), then `{"mode":"read"}` |
 | Idle timeout | Pages other than the Dashboard close after the number of seconds in the `security.pageTimeoutSeconds` setting (default 120; 0 switches it off). The warning shows for the last 30 seconds |
 | Configuration | `config.json` next to the program: company name, and an optional `databasePath` to move the database |
 
@@ -403,12 +457,13 @@ The project began as the *Barcode Traceability System*. It has since been reshap
 
 | Table | Holds |
 |---|---|
-| `stations` | Stations, their order, on/off state, and which is final |
-| `station_devices` | Which USB reader belongs to which station (one per station) |
+| `stations` | Stations, their order, on/off state, which is final, and the IP address (`reader_ip`) and MAC (`reader_mac`) of each one's reader |
+| `station_devices` | Not used since version 3 (it held the USB reader of each station). Kept so older databases open unchanged |
+| `reader_cursors` | Per reader MAC: the boot id and last event processed, so taps made while the program was closed are caught up exactly once |
 | `tag_assignments` | Which RFID tag carries which work order |
 | `trace_history` | Every station visit: work order, station, result, entry time (`scanned_at`) and exit time (`exited_at`) |
 | `current_trace` | Latest position and status for each work order |
-| `scan_logs` | Raw, duplicate, rejected, error and info events |
+| `scan_logs` | Every scan event and reader status line. Since version 4, `outcome` says what a station scan came to (Accepted = valid, Rejected / Error = invalid, Duplicate = repeat; empty for lines that are not scans) and `tag_id` holds the tag |
 | `settings` | Key/value settings, including the password hash |
 | `routes`, `route_stations` | Kept from the original design, not used in scanning |
 
@@ -418,10 +473,11 @@ Note: the work order code is stored in columns named `barcode`. Only the screens
 
 | Part | File | Job |
 |---|---|---|
-| Reader input | `Services/Scanning/RawInputScannerService.cs` | Reads the USB readers |
+| Network readers | `Services/Rfid/NetworkReaderService.cs`, `ReaderPoller.cs`, `RfidReaderClient.cs` | Poll every reader, keep production readers in read mode, report status |
+| Tag writer | `Services/Rfid/TagWriter.cs` | Writes a work order to a tag at the assigning station and links the tag |
 | Scan coordinator | `Services/ScanCoordinator.cs` | Turns a tag into its work order, applies the sequence rules, and decides what happens to each scan |
 | Trace service | `Services/TraceService.cs` | Saves history, current positions, logs and search |
-| Station service | `Services/StationService.cs` | Stations and the reader assigned to each |
+| Station service | `Services/StationService.cs` | Stations and the address of each one's reader |
 | Tag service | `Services/TagService.cs` | Tag to work order assignments |
 | Report service | `Services/ReportService.cs` | Report figures and chart data |
 | Database service | `Data/DatabaseService.cs` | Database access, backup, restore |
@@ -433,9 +489,9 @@ Note: the work order code is stored in columns named `barcode`. Only the screens
 | Option | Purpose |
 |---|---|
 | *(none)* | Normal start |
-| `--selftest` | Automatic check: builds a temporary database, runs test scans, reports, exports and backup, prints PASS or FAIL |
+| `--selftest` | Automatic check: builds a temporary database, runs test scans, reports, exports and backup, and drives the reader polling and tag writing against simulated network readers. Prints PASS or FAIL |
 | `--seed-demo [units] [days] [--append]` | Fills the database with sample data (default 40 work orders over 7 days) for training or demonstration |
-| `--wipe-data` | Resets to a clean state (clears history, positions, logs, reader assignments and tag assignments; keeps stations and settings) |
+| `--wipe-data` | Resets to a clean state (clears history, positions, logs and tag assignments; keeps stations, reader addresses and settings) |
 | `--smoke` | Opens and closes the main window to check it starts |
 | `--shot <file.png> [--page <name>] [--tab <n>]` | Saves a screenshot of the window |
 
@@ -445,28 +501,33 @@ Note: the work order code is stored in columns named `barcode`. Only the screens
 
 | Question / problem | Answer |
 |---|---|
-| **A tap doesn't appear on the Dashboard** | Check the reader is plugged in and shown against its station in *Settings › Stations*, that the station is *Enabled*, and that the *Tag Assignment* page is not open |
-| **The reader's light stays red and nothing happens** | The reader is not reading the card. The card is the wrong type for the reader (see [What you need](#what-you-need)). Test in Notepad: a working card makes the reader beep and type a number |
-| **A reader's scans show at the wrong station** | Open *Settings › Stations*, select the right station, press *Assign reader* and tap a card on that reader |
+| **A tap doesn't appear on the Dashboard** | Check the station's *Reader status* in *Settings › Stations* says Online. If it is offline, check the reader's power and Wi-Fi and its address in *Settings › Stations* (**Test reader**). Also check the station is *Enabled*. Taps made while a reader was offline are recorded once it is back |
+| **A reader shows offline but it is switched on** | Its address may have changed. Open its web page or check the router, enter the right address, and give it a DHCP reservation so it never changes. The PC and the readers must be on the same network, and the router network must not be `192.168.4.x` |
+| **A reader's scans show at the wrong station** | Two stations have each other's reader addresses. Correct the IP addresses in *Settings › Stations* and press *Save changes*. **Test reader** shows the reader's name (RFID-RW-xxxx), printed on its own web page |
+| **Write to tag says the assignment station is not set up** | Enter the assigning reader's address in *Settings › Assignment Station* and press *Save* |
+| **The write keeps failing with "authentication failed"** | The card is not a MIFARE Classic card with the factory key (Ultralight, NTAG and DESFire cards cannot be written). Use a supported card |
+| **The status box says "No tag was presented in time"** | The reader was armed for 30 seconds and no tag came. Press **Write to tag** again and present the tag within the countdown |
 | **A scan shows NG** | The tag was tapped at the final station before the first one ("Out of sequence"). An administrator deletes that scan in *Scan Information*, then the tag is tapped in the right order |
 | **I tapped twice but only one scan shows** | A repeat tap at the same station is ignored on purpose. It shows as **DUP** in the Live Scan Log |
-| **The log says "Tag is not assigned to a work order"** | Open *Tag Assignment*, tap the tag, type its work order number and press *Assign* |
+| **Test reader shows "no MAC reported (00:00:00:00:00:00)"** | The reader firmware most likely reads its MAC address before Wi-Fi has started, so every such reader reports zeros (and is named RFID-RW-0000). The program copes: it identifies these readers by their IP address. Fixing the firmware (read the MAC after `WiFi.mode(...)`) is still recommended, so the readers can be told apart |
+| **The log says "Tag is not assigned to a work order"** | Write the work order to the tag on the *Tag Assignment* page (the log shows the text found on the card, if any) |
 | **The log says "Blocked - delete the rejected scan"** | The work order has an NG scan on record. An administrator deletes it in *Scan Information* |
 | **A tag was tapped at the final station by mistake** | An administrator selects the work order in *Scan Information* and presses *Delete last scan*. It goes back to the first station |
 | **A work order never shows Completed** | It must be scanned at the station marked *Final* in Settings › Stations |
 | **I can't edit anything in Settings** | Settings are locked. Enter the password at the top right and press Unlock |
 | **I forgot the password** | Restore a backup whose password you know, or ask IT to reset the password value in the database |
 | **Where are my exported reports?** | Documents › Nasmyth Traceability › Exports |
-| **Can I use the normal keyboard to scan?** | No. The keyboard is deliberately ignored, and there is no manual scan screen. Every scan comes from a tag tapped on a reader |
-| **Does it need the internet?** | No, it runs entirely on the PC |
+| **Can I use the normal keyboard to scan?** | No. There is no manual scan screen. Every scan comes from a tag tapped on a reader |
+| **Does it need the internet?** | No. It runs on the PC and talks only to the readers on the local network |
 | **The database file was deleted** | Start the application again. It creates a new empty database and carries on. Use *Settings › Database › Restore* to bring back a backup |
 
 ---
 
 ## 14. Limitations and suggested next steps
 
-- **Not yet tried with real readers and tags.** Reader assignment, tag assignment, the sequence rules and the delete functions pass the automatic self-test, but have not been tried with physical readers and matching tags. Check on site: *Assign reader* should pick up each reader, a tag ID should appear on the *Tag Assignment* page when tapped, and the tag number should not appear in the search box.
-- **Two identical readers.** Both readers are the same model, so Windows tells them apart only by the USB port. Keep each in its own port, and assign it again if it is moved.
+- **Not yet tried with the physical readers.** Polling, tag writing, reader restarts and outages pass the automatic self-test against simulated readers that follow the reader API (README.md), and against a simulated reader over real HTTP, but not yet against the ESP32 readers themselves. Check on site: each reader shows online, a tap at each station appears on the Dashboard at the right station, and **Write to tag** writes and links a tag at the assigning station.
+- **Up to 16 taps between two polls.** A reader keeps only its last 16 events. If more than 16 tags are presented while a reader cannot be reached (or while the program is closed), the oldest are lost; this is logged.
+- **Readers are not secured.** The reader API has no password. Keep the readers on a trusted network.
 - **Fixed display settings.** Company name, date format, font size and full-screen start-up can no longer be changed in the app. They keep their current values.
 - **One PC only.** Data lives on one computer. Other offices can't view it live, and regular off-PC backups are essential. *Suggestion:* scheduled automatic backups, or a shared network database if several PCs are needed later.
 - **Export totals.** The Excel/PDF exports still include the overall totals that were removed from the Reports screen.
@@ -478,11 +539,13 @@ Note: the work order code is stored in columns named `barcode`. Only the screens
 | Term | Meaning |
 |---|---|
 | **Work order** | A production job, identified by its work order number |
-| **Tag** | The RFID card or key fob that travels with a work order. Its ID is linked to the work order number |
-| **Tag assignment** | The link between a tag and a work order, made on the Tag Assignment page |
+| **Tag** | The RFID card or key fob that travels with a work order. Its UID is linked to the work order number, and the work order is also written on it |
+| **UID** | A tag's factory serial number. It cannot be changed, so it is what identifies the tag |
+| **Work order assigning station** | The reader used only on the Tag Assignment page, to write work orders to tags |
+| **Tag assignment** | The link between a tag and a work order, made by writing the work order to the tag on the Tag Assignment page |
 | **Station** | A workstation on the shop floor where a work order is processed and scanned |
 | **Final station** | The last station. A scan here marks the work order as Completed |
-| **Scan** | Tapping a work order's tag on a station's reader (or entering the work order by hand) |
+| **Scan** | Tapping a work order's tag on a station's reader |
 | **OK / NG** | Result of a scan: OK is accepted, NG ("not good") is rejected |
 | **In Progress / Completed / Rejected** | Work order status: still moving, finished at the final station, or last scan rejected |
 | **Traceability** | Being able to show where an item has been, and when |

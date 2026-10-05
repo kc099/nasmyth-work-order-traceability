@@ -5,7 +5,8 @@ namespace NasmythTraceability.Models;
 /// <summary>Production station. One row per physical station plus the fixed final station.</summary>
 public sealed class Station : ObservableObject
 {
-    private string _readerName = "";
+    private string _readerStatus = "";
+    private string _readerStateKey = "";
 
     public int Id { get; set; }
 
@@ -24,21 +25,25 @@ public sealed class Station : ObservableObject
 
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>
-    /// Name of the reader assigned to this station (joined, not persisted on this row).
-    /// Observable so the Settings grid follows a reader being assigned or removed.
-    /// </summary>
-    public string ReaderName
+    /// <summary>Address of the station's network RFID reader, host[:port]; empty when it has none.</summary>
+    public string ReaderIp { get; set; } = "";
+
+    /// <summary>MAC the reader at <see cref="ReaderIp"/> last reported - its permanent identity.</summary>
+    public string ReaderMac { get; set; } = "";
+
+    /// <summary>Live connection text for the Settings grid (not persisted).</summary>
+    public string ReaderStatus
     {
-        get => _readerName;
-        set
-        {
-            if (SetProperty(ref _readerName, value))
-                OnPropertyChanged(nameof(ReaderText));
-        }
+        get => _readerStatus;
+        set => SetProperty(ref _readerStatus, value);
     }
 
-    public string ReaderText => string.IsNullOrEmpty(ReaderName) ? "Not assigned" : ReaderName;
+    /// <summary>"ONLINE" / "OFFLINE" / "WARN" / "" for the status brush (not persisted).</summary>
+    public string ReaderStateKey
+    {
+        get => _readerStateKey;
+        set => SetProperty(ref _readerStateKey, value);
+    }
 
     public override string ToString() => $"{Code} - {Name}";
 }

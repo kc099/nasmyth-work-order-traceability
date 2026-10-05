@@ -1,5 +1,8 @@
+using System.Net.Http;
 using NasmythTraceability.Data;
+using NasmythTraceability.Models;
 using NasmythTraceability.Services;
+using NasmythTraceability.Services.Rfid;
 using NasmythTraceability.Services.Scanning;
 
 namespace NasmythTraceability.Helpers;
@@ -10,7 +13,12 @@ namespace NasmythTraceability.Helpers;
 /// </summary>
 public sealed class AppServices : IDisposable
 {
-    public AppServices(AppConfig config, bool useSimulatedScanner)
+    /// <param name="useSimulatedScanner">
+    /// True for the self-test and the data tools: reads come from <see cref="Simulated"/> and the
+    /// network readers are not polled unless <see cref="NetworkReaderService.Start"/> is called.
+    /// </param>
+    /// <param name="readerHandler">Replaces the network (self-test fake readers).</param>
+    public AppServices(AppConfig config, bool useSimulatedScanner, HttpMessageHandler? readerHandler = null)
     {
         Config = config;
         Database = new DatabaseService(config.ResolveDatabasePath());
@@ -25,48 +33,101 @@ public sealed class AppServices : IDisposable
         // there is no fixed routing, only a fixed final station.
         Routes = new RouteService(Database, Settings);
 
+        // Network RFID readers: one polling loop per station reader and one for the work order
+        // assigning station. They run for the life of the app, whatever page is open.
+        Readers = new NetworkReaderService(new ReaderCursorStore(Database),
+            () => Settings.GetInt(SettingsService.ReaderPollIntervalMs, 500), readerHandler);
+        TagWriter = new TagWriter(Readers, Tags, Trace);
+
         if (useSimulatedScanner)
         {
             var sim = new SimulatedScannerService();
             sim.Start();
             Simulated = sim;
-            Scanner = sim;
+            Coordinator = new ScanCoordinator(Stations, Trace, Tags, Settings, Readers, sim);
         }
         else
         {
-            var raw = new RawInputScannerService();
-            RawInput = raw;
-            Scanner = raw;
+            Coordinator = new ScanCoordinator(Stations, Trace, Tags, Settings, Readers);
         }
 
-        Coordinator = new ScanCoordinator(Scanner, Stations, Trace, Tags, Settings);
+        Readers.IdentityChanged += OnReaderIdentityChanged;
+        Readers.ConnectionChanged += OnReaderConnectionChanged;
+        Readers.Notice += OnReaderNotice;
+        Stations.Changed += OnConfigurationChanged;
+        Settings.Changed += OnConfigurationChanged;
+        ConfigureReaders();
 
-        if (RawInput is not null)
-        {
-            RefreshScannerAllowList();
-            ApplyReaderSettings();
-            Stations.Changed += OnStationsChanged;
-            Settings.Changed += OnSettingsChanged;
-        }
+        if (!useSimulatedScanner)
+            Readers.Start();
     }
 
-    private void OnStationsChanged(object? sender, EventArgs e) => RefreshScannerAllowList();
+    private void OnConfigurationChanged(object? sender, EventArgs e) => ConfigureReaders();
 
-    private void OnSettingsChanged(object? sender, EventArgs e) => ApplyReaderSettings();
+    /// <summary>Points the pollers at the readers set up in Settings (enabled stations only).</summary>
+    public void ConfigureReaders()
+    {
+        var endpoints = new List<ReaderEndpoint>();
+        var macs = new Dictionary<string, string>();
 
-    /// <summary>Tells the raw-input reader which HID devices are mapped, enabled scanners.</summary>
-    private void RefreshScannerAllowList()
-        => RawInput?.SetAllowedDevices(
-            Stations.GetDevices().Where(d => d.IsEnabled).Select(d => d.DeviceKey));
+        foreach (var s in Stations.GetStations(includeDisabled: false).Where(s => s.ReaderIp.Length > 0))
+        {
+            var key = ReaderEndpoint.StationKey(s.Id);
+            endpoints.Add(new ReaderEndpoint(key, ReaderRole.Station, s.Id, s.Code, s.ReaderIp));
+            macs[key] = s.ReaderMac;
+        }
 
-    /// <summary>
-    /// Pushes the known reader models to the raw-input reader. It always listens for readers
-    /// that are not linked yet (a reader must be heard to be assigned to a station); whether
-    /// such a reader is linked automatically is decided by the coordinator.
-    /// </summary>
-    private void ApplyReaderSettings()
-        => RawInput?.SetKnownReaderIds(
-            Settings.Get(SettingsService.KnownReaderIds, SettingsService.DefaultKnownReaderIds).Split(';'));
+        var assignIp = Settings.Get(SettingsService.AssignmentReaderIp);
+        if (assignIp.Length > 0)
+        {
+            endpoints.Add(new ReaderEndpoint(ReaderEndpoint.AssignmentKey, ReaderRole.Assignment, null,
+                AssignmentStationCode, assignIp));
+            macs[ReaderEndpoint.AssignmentKey] = Settings.Get(SettingsService.AssignmentReaderMac);
+        }
+
+        Readers.Configure(endpoints, macs);
+    }
+
+    /// <summary>Station code used in logs for the work order assigning station.</summary>
+    public const string AssignmentStationCode = "ASSIGN";
+
+    // The MAC is a reader's permanent identity: keep it next to the address and warn if a
+    // different unit answers there (README section 2).
+    private void OnReaderIdentityChanged(object? sender, ReaderIdentityEventArgs e)
+    {
+        if (e.Endpoint.Role == ReaderRole.Assignment)
+        {
+            if (Settings.Get(SettingsService.AssignmentReaderIp) == e.Endpoint.Host)
+                Settings.Set(SettingsService.AssignmentReaderMac, e.Mac);
+        }
+        else if (e.Endpoint.StationId is int id)
+        {
+            Stations.SetReaderMac(id, e.Mac);
+        }
+
+        // Only two real MACs prove another unit; firmware that reports 00:00:00:00:00:00 cannot.
+        if (ReaderAddress.IsUsableMac(e.PreviousMac) && ReaderAddress.IsUsableMac(e.Mac))
+            Log(e.Endpoint, ScanLogType.Error,
+                $"A different reader answers at {e.Endpoint.Host}: MAC {e.Mac} ({e.Device}), was {e.PreviousMac}");
+    }
+
+    private void OnReaderConnectionChanged(object? sender, ReaderConnectionEventArgs e)
+        => Log(e.Endpoint, e.Online ? ScanLogType.Info : ScanLogType.Error, e.Detail);
+
+    private void OnReaderNotice(object? sender, ReaderConnectionEventArgs e)
+        => Log(e.Endpoint, ScanLogType.Info, e.Detail);
+
+    private void Log(ReaderEndpoint endpoint, ScanLogType type, string message)
+    {
+        try
+        {
+            Trace.LogScan("", endpoint.StationId, endpoint.StationCode, endpoint.Host, "", type, message);
+        }
+        catch
+        {
+            // Logging must never stop the readers.
+        }
+    }
 
     public AppConfig Config { get; }
     public DatabaseService Database { get; }
@@ -77,17 +138,25 @@ public sealed class AppServices : IDisposable
     public TagService Tags { get; }
     public ReportService Reports { get; }
 
-    public IScannerService Scanner { get; }
-    public RawInputScannerService? RawInput { get; }
+    /// <summary>Network RFID readers (production stations and the work order assigning station).</summary>
+    public NetworkReaderService Readers { get; }
+
+    /// <summary>Writes work orders to tags on the work order assigning station.</summary>
+    public TagWriter TagWriter { get; }
+
     public SimulatedScannerService? Simulated { get; }
     public ScanCoordinator Coordinator { get; }
 
     public void Dispose()
     {
-        Stations.Changed -= OnStationsChanged;
-        Settings.Changed -= OnSettingsChanged;
+        Stations.Changed -= OnConfigurationChanged;
+        Settings.Changed -= OnConfigurationChanged;
+        Readers.IdentityChanged -= OnReaderIdentityChanged;
+        Readers.ConnectionChanged -= OnReaderConnectionChanged;
+        Readers.Notice -= OnReaderNotice;
+        TagWriter.Dispose();
         Coordinator.Dispose();
-        RawInput?.Dispose();
+        Readers.Dispose();
         Simulated?.Dispose();
         Database.Dispose();
     }

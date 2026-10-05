@@ -19,7 +19,8 @@ public sealed class ReportService
     private static (string From, string To) Bounds(DateTime from, DateTime to)
         => (Db.ToDb(from.Date), Db.ToDb(to.Date.AddDays(1)));
 
-    public ReportSummary GetSummary(DateTime from, DateTime to)
+    /// <param name="validOnly">Count only valid (OK) station visits, as in the exported report.</param>
+    public ReportSummary GetSummary(DateTime from, DateTime to, bool validOnly = false)
     {
         var (f, t) = Bounds(from, to);
         return _db.QuerySingle(
@@ -28,7 +29,7 @@ public sealed class ReportService
             "  SUM(CASE WHEN result = 'OK' THEN 1 ELSE 0 END) AS ok, " +
             "  SUM(CASE WHEN result = 'NG' THEN 1 ELSE 0 END) AS ng, " +
             "  COUNT(DISTINCT barcode) AS uniq " +
-            "FROM trace_history WHERE scanned_at >= $f AND scanned_at < $t;",
+            "FROM trace_history WHERE scanned_at >= $f AND scanned_at < $t" + (validOnly ? " AND result = 'OK';" : ";"),
             r => new ReportSummary
             {
                 From = from.Date,
@@ -41,7 +42,7 @@ public sealed class ReportService
             ("$f", f), ("$t", t)) ?? new ReportSummary { From = from.Date, To = to.Date };
     }
 
-    public List<StationCount> GetByStation(DateTime from, DateTime to)
+    public List<StationCount> GetByStation(DateTime from, DateTime to, bool validOnly = false)
     {
         var (f, t) = Bounds(from, to);
 
@@ -52,6 +53,7 @@ public sealed class ReportService
             "  SUM(CASE WHEN h.result = 'NG' THEN 1 ELSE 0 END) AS ng " +
             "FROM stations s " +
             "LEFT JOIN trace_history h ON h.station_id = s.id AND h.scanned_at >= $f AND h.scanned_at < $t " +
+            (validOnly ? "AND h.result = 'OK' " : "") +
             "GROUP BY s.id, s.code, s.name ORDER BY s.sequence, s.code;",
             r => new StationCount
             {
@@ -64,15 +66,46 @@ public sealed class ReportService
             ("$f", f), ("$t", t));
     }
 
-    public List<TraceHistory> GetScans(DateTime from, DateTime to, int limit = 500)
+    public List<TraceHistory> GetScans(DateTime from, DateTime to, int limit = 500, bool validOnly = false)
     {
         var (f, t) = Bounds(from, to);
         return _db.Query(
             "SELECT * FROM trace_history WHERE scanned_at >= $f AND scanned_at < $t " +
+            (validOnly ? "AND result = 'OK' " : "") +
             "ORDER BY scanned_at DESC, id DESC LIMIT $n;",
             MapHistory, ("$f", f), ("$t", t), ("$n", limit));
     }
 
+    /// <summary>
+    /// Per station: valid scans (station visits recorded OK - so an administrator's corrections
+    /// are reflected), invalid scans and repeat scans (from the scan log). Stations with no scans
+    /// are included.
+    /// </summary>
+    public List<StationScanBreakdown> GetScanBreakdown(DateTime from, DateTime to)
+    {
+        var (f, t) = Bounds(from, to);
+        return _db.Query(
+            "SELECT s.id AS sid, s.code AS code, s.name AS name, " +
+            "  (SELECT COUNT(*) FROM trace_history h WHERE h.station_id = s.id AND h.result = 'OK' " +
+            "     AND h.scanned_at >= $f AND h.scanned_at < $t) AS valid, " +
+            "  (SELECT COUNT(*) FROM scan_logs l WHERE l.station_id = s.id AND l.outcome IN ('Rejected','Error') " +
+            "     AND l.created_at >= $f AND l.created_at < $t) AS invalid, " +
+            "  (SELECT COUNT(*) FROM scan_logs l WHERE l.station_id = s.id AND l.outcome = 'Duplicate' " +
+            "     AND l.created_at >= $f AND l.created_at < $t) AS rpt " +
+            "FROM stations s ORDER BY s.sequence, s.code;",
+            r => new StationScanBreakdown
+            {
+                StationId = r.GetInt("sid"),
+                StationCode = r.GetString("code"),
+                StationName = r.GetString("name"),
+                Valid = r.GetInt("valid"),
+                Invalid = r.GetInt("invalid"),
+                Repeat = r.GetInt("rpt"),
+            },
+            ("$f", f), ("$t", t));
+    }
+
+    /// <summary>The exported report: valid station visits only - no invalid or repeat scans.</summary>
     public ReportBundle BuildBundle(DateTime from, DateTime to)
     {
         return new ReportBundle
@@ -80,9 +113,9 @@ public sealed class ReportService
             CompanyName = _settings.Get(SettingsService.CompanyName, "Nasmyth Asia (IN) Pvt Ltd."),
             Title = "Work Order Traceability Report",
             GeneratedAt = DateTime.Now,
-            Summary = GetSummary(from, to),
-            ByStation = GetByStation(from, to),
-            Scans = GetScans(from, to, 5000),
+            Summary = GetSummary(from, to, validOnly: true),
+            ByStation = GetByStation(from, to, validOnly: true),
+            Scans = GetScans(from, to, 5000, validOnly: true),
         };
     }
 

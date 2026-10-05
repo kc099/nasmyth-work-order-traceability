@@ -3,42 +3,75 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using NasmythTraceability.Data;
 using NasmythTraceability.Helpers;
 using NasmythTraceability.Models;
-using NasmythTraceability.Services.Scanning;
+using NasmythTraceability.Services.Rfid;
 
 namespace NasmythTraceability.ViewModels;
 
-/// <summary>Backs the Settings screen: Stations (with their readers) and Database.</summary>
+/// <summary>
+/// Backs the Settings screen: Stations (each with the IP address of its network reader), the
+/// work order assigning station, and Database.
+/// </summary>
 public sealed partial class SettingsViewModel : ObservableObject
 {
     private readonly AppServices _services;
     private readonly SettingsService _settings;
+    private readonly Dispatcher? _dispatcher;
 
     public SettingsViewModel(AppServices services)
     {
         _services = services;
         _settings = services.Settings;
+        _dispatcher = Application.Current?.Dispatcher;
 
         ReloadStations();
+        LoadAssignmentStation();
 
-        AutoDetectReaders = _settings.GetBool(SettingsService.AutoDetectReaders, true);
         DatabasePath = _services.Database.DatabasePath;
 
-        // A reader can link itself on its first card tap - show it against its station straight away.
         _services.Stations.Changed += OnStationsChanged;
+        _services.Readers.StatusChanged += OnReaderStatusChanged;
     }
 
-    /// <summary>Refreshes the Reader column in place, so unsaved edits in the grid are not lost.</summary>
-    private void OnStationsChanged(object? sender, EventArgs e)
+    private void OnStationsChanged(object? sender, EventArgs e) => OnUi(RefreshReaderStatuses);
+
+    private void OnReaderStatusChanged(object? sender, ReaderStatusInfo e) => OnUi(RefreshReaderStatuses);
+
+    /// <summary>Live reader status per station row and for the assignment station.</summary>
+    private void RefreshReaderStatuses()
     {
-        var readers = _services.Stations.GetStations().ToDictionary(s => s.Id, s => s.ReaderName);
+        var saved = _services.Stations.GetStations().ToDictionary(s => s.Id);
         foreach (var s in Stations)
-            s.ReaderName = readers.TryGetValue(s.Id, out var name) ? name : "";
+        {
+            var row = saved.TryGetValue(s.Id, out var db) ? db : null;
+            if (row is null || row.ReaderIp.Length == 0)
+            {
+                s.ReaderStatus = "No reader IP";
+                s.ReaderStateKey = "";
+            }
+            else if (!row.IsEnabled)
+            {
+                s.ReaderStatus = "Station disabled - not polled";
+                s.ReaderStateKey = "";
+            }
+            else
+            {
+                var status = _services.Readers.StationStatus(s.Id);
+                s.ReaderStatus = status.StateText;
+                s.ReaderStateKey = status.StateKey;
+            }
+        }
+
+        var assignIp = _settings.Get(SettingsService.AssignmentReaderIp);
+        var assign = _services.Readers.AssignmentStatus;
+        AssignmentStatusText = assignIp.Length == 0 ? "Not set up" : assign.StateText;
+        AssignmentStatusKey = assignIp.Length == 0 ? "" : assign.StateKey;
     }
 
     // =====================================================================
@@ -53,29 +86,141 @@ public sealed partial class SettingsViewModel : ObservableObject
         foreach (var s in _services.Stations.GetStations())
             Stations.Add(s);
         SelectedStation = Stations.FirstOrDefault();
+        RefreshReaderStatuses();
+        SuggestNewStation();
+    }
+
+    // ---- new station ------------------------------------------------------
+    [ObservableProperty] private string _newStationCode = "";
+    [ObservableProperty] private string _newStationName = "";
+    [ObservableProperty] private string _newStationIp = "";
+
+    private void SuggestNewStation()
+    {
+        var next = Stations.Count + 1;
+        while (Stations.Any(s => string.Equals(s.Code, $"ST{next:00}", StringComparison.OrdinalIgnoreCase)))
+            next++;
+        NewStationCode = $"ST{next:00}";
+        NewStationName = $"Station {next}";
+        NewStationIp = "";
     }
 
     [RelayCommand(CanExecute = nameof(IsUnlocked))]
     private void AddStation()
     {
-        var next = Stations.Count + 1;
-        var s = new Station { Code = $"ST{next:00}", Name = $"Station {next}", Sequence = next, IsEnabled = true };
-        s.Id = _services.Stations.AddStation(s);
-        Stations.Add(s);
-        SelectedStation = s;
-        Toast($"Added {s.Code}.");
+        var code = NewStationCode.Trim().ToUpperInvariant();
+        var name = NewStationName.Trim();
+        if (code.Length == 0 || name.Length == 0)
+        {
+            Toast("Enter a code and a name for the new station.");
+            return;
+        }
+
+        if (Stations.Any(s => string.Equals(s.Code.Trim(), code, StringComparison.OrdinalIgnoreCase)))
+        {
+            Toast($"There is already a station {code}.");
+            return;
+        }
+
+        var ip = ReaderAddress.Normalize(NewStationIp, out var error);
+        if (ip is null)
+        {
+            Toast(error!);
+            return;
+        }
+
+        if (ip.Length > 0 && FindAddressUser(ip) is { } user)
+        {
+            Toast($"{ip} is already the reader of {user}. Each reader serves one station.");
+            return;
+        }
+
+        var sequence = Stations.Count == 0 ? 1 : Stations.Max(s => s.Sequence) + 1;
+        var station = new Station { Code = code, Name = name, Sequence = sequence, IsEnabled = true, ReaderIp = ip };
+        try
+        {
+            station.Id = _services.Stations.AddStation(station);
+        }
+        catch (Exception ex)
+        {
+            Toast("Could not add the station: " + ex.Message);
+            return;
+        }
+
+        ReloadStations();
+        SelectedStation = Stations.FirstOrDefault(x => x.Id == station.Id);
+        Toast(ip.Length == 0
+            ? $"Added {code}. Enter its reader's IP address in the list when the reader is ready."
+            : $"Added {code}. Its reader at {ip} is now polled.");
     }
 
     [RelayCommand(CanExecute = nameof(IsUnlocked))]
     private void SaveStations()
     {
+        // Validate everything first, so a bad row does not leave the list half saved.
+        var codes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var ips = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var assignIp = _settings.Get(SettingsService.AssignmentReaderIp);
+        var normalized = new Dictionary<Station, string>();
+
         foreach (var s in Stations)
         {
-            if (s.Id == 0) s.Id = _services.Stations.AddStation(s);
-            else _services.Stations.UpdateStation(s);
+            if (string.IsNullOrWhiteSpace(s.Code) || string.IsNullOrWhiteSpace(s.Name))
+            {
+                Toast("Every station needs a code and a name.");
+                return;
+            }
+
+            if (!codes.Add(s.Code.Trim()))
+            {
+                Toast($"Station code {s.Code.Trim()} is used twice.");
+                return;
+            }
+
+            var ip = ReaderAddress.Normalize(s.ReaderIp, out var error);
+            if (ip is null)
+            {
+                Toast($"{s.Code}: {error}");
+                return;
+            }
+
+            if (ip.Length > 0)
+            {
+                if (ips.TryGetValue(ip, out var other))
+                {
+                    Toast($"{ip} is entered for both {other} and {s.Code}. Each reader serves one station.");
+                    return;
+                }
+
+                if (string.Equals(ip, assignIp, StringComparison.OrdinalIgnoreCase))
+                {
+                    Toast($"{ip} is the work order assigning station's reader; it cannot also serve {s.Code}.");
+                    return;
+                }
+
+                ips[ip] = s.Code;
+            }
+
+            normalized[s] = ip;
         }
+
+        try
+        {
+            foreach (var s in Stations)
+            {
+                s.ReaderIp = normalized[s];
+                if (s.Id == 0) s.Id = _services.Stations.AddStation(s);
+                else _services.Stations.UpdateStation(s);
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast("Save failed: " + ex.Message);
+            return;
+        }
+
         ReloadStations();
-        Toast("Stations saved.");
+        Toast("Stations saved. Each reader is polled at the address shown.");
     }
 
     [RelayCommand(CanExecute = nameof(IsUnlocked))]
@@ -134,104 +279,116 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
+    /// <summary>Asks the selected station's reader for its status (the address as typed, saved or not).</summary>
+    [RelayCommand]
+    private Task TestStationReaderAsync()
+    {
+        if (SelectedStation is null)
+        {
+            Toast("Select a station first.");
+            return Task.CompletedTask;
+        }
+
+        return TestAsync(SelectedStation.ReaderIp, SelectedStation.Code);
+    }
+
+    [RelayCommand]
+    private Task TestNewStationReaderAsync() => TestAsync(NewStationIp, "the new station");
+
+    /// <summary>Station code (or the assigning station) already using a reader address.</summary>
+    private string? FindAddressUser(string ip)
+    {
+        if (string.Equals(ip, _settings.Get(SettingsService.AssignmentReaderIp), StringComparison.OrdinalIgnoreCase))
+            return "the work order assigning station";
+        return Stations.FirstOrDefault(s =>
+            string.Equals(ReaderAddress.Normalize(s.ReaderIp, out _), ip, StringComparison.OrdinalIgnoreCase))?.Code;
+    }
+
     // =====================================================================
-    // Reader of the selected station
+    // Work order assigning station
     // =====================================================================
-    [ObservableProperty] private bool _autoDetectReaders;
+    [ObservableProperty] private string _assignmentIp = "";
+    [ObservableProperty] private string _assignmentMac = "";
+    [ObservableProperty] private string _assignmentStatusText = "";
+    [ObservableProperty] private string _assignmentStatusKey = "";
 
-    /// <summary>True while waiting for a card tap that tells which reader belongs to the station.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(AssignReaderText))]
-    private bool _isCapturingReader;
-
-    private int _captureStationId;
-
-    public string AssignReaderText => IsCapturingReader ? "Cancel" : "Assign reader";
-
-    partial void OnAutoDetectReadersChanged(bool value)
+    private void LoadAssignmentStation()
     {
-        if (_settings.GetBool(SettingsService.AutoDetectReaders, true) == value)
-            return;
-        _settings.Set(SettingsService.AutoDetectReaders, value);
-        Toast(value ? "A new reader is linked to the first free station on its first card tap."
-                    : "Automatic linking of new readers is off. Use Assign reader.");
-    }
-
-    /// <summary>
-    /// Starts (or cancels) waiting for a card tap: the reader the card is tapped on becomes
-    /// the selected station's reader.
-    /// </summary>
-    [RelayCommand(CanExecute = nameof(IsUnlocked))]
-    private void AssignReader()
-    {
-        if (IsCapturingReader)
-        {
-            StopReaderCapture();
-            Toast("Reader assignment cancelled.");
-            return;
-        }
-
-        if (SelectedStation is null || SelectedStation.Id == 0)
-        {
-            Toast("Select a saved station first.");
-            return;
-        }
-
-        _captureStationId = SelectedStation.Id;
-        IsCapturingReader = true;
-        _services.Coordinator.ReadInterceptor = OnReaderCaptured;
-        Toast($"Tap any card on the reader that belongs to {SelectedStation.Code}...");
-    }
-
-    private void OnReaderCaptured(BarcodeScannedEventArgs e)
-    {
-        var stationId = _captureStationId;
-        StopReaderCapture();
-
-        var station = _services.Stations.GetStation(stationId);
-        if (station is null)
-        {
-            Toast("That station no longer exists.");
-            return;
-        }
-
-        var previous = _services.Stations.GetDeviceByKey(e.DeviceKey);
-        _services.Stations.MapDeviceToStation(e.DeviceKey, e.DeviceName, stationId);
-        Toast(previous is not null && previous.StationId != stationId
-            ? $"Reader moved from {previous.StationCode} to {station.Code}."
-            : $"Reader assigned to {station.Code}.");
-    }
-
-    private void StopReaderCapture()
-    {
-        if (!IsCapturingReader)
-            return;
-        IsCapturingReader = false;
-        _services.Coordinator.ReadInterceptor = null;
+        AssignmentIp = _settings.Get(SettingsService.AssignmentReaderIp);
+        var mac = _settings.Get(SettingsService.AssignmentReaderMac);
+        AssignmentMac = mac.Length == 0 || ReaderAddress.IsUsableMac(mac) ? mac : mac + "  (not reported by the reader firmware)";
+        RefreshReaderStatuses();
     }
 
     [RelayCommand(CanExecute = nameof(IsUnlocked))]
-    private void RemoveReader()
+    private void SaveAssignmentStation()
     {
-        if (SelectedStation is null || SelectedStation.Id == 0)
+        var ip = ReaderAddress.Normalize(AssignmentIp, out var error);
+        if (ip is null)
         {
-            Toast("Select a saved station first.");
+            Toast(error!);
             return;
         }
 
-        var code = SelectedStation.Code;
-        if (string.IsNullOrEmpty(SelectedStation.ReaderName))
+        var user = ip.Length == 0
+            ? null
+            : _services.Stations.GetStations()
+                .FirstOrDefault(s => string.Equals(s.ReaderIp, ip, StringComparison.OrdinalIgnoreCase))?.Code;
+        if (user is not null)
         {
-            Toast($"{code} has no reader assigned.");
+            Toast($"{ip} is the reader of {user}. The assigning station needs a reader of its own.");
             return;
         }
 
-        if (Confirm($"Remove the reader from {code}? Card taps on it will not be recorded until it is assigned again.")
-            != MessageBoxResult.Yes)
-            return;
+        if (ip != _settings.Get(SettingsService.AssignmentReaderIp))
+        {
+            if (_services.TagWriter.IsWaiting)
+                _ = _services.TagWriter.CancelAsync();
+            _settings.SetMany(new Dictionary<string, string>
+            {
+                [SettingsService.AssignmentReaderIp] = ip,
+                [SettingsService.AssignmentReaderMac] = "", // a new address is a different reader
+            });
+        }
 
-        _services.Stations.RemoveStationReader(SelectedStation.Id);
-        Toast($"Reader removed from {code}.");
+        LoadAssignmentStation();
+        Toast(ip.Length == 0
+            ? "Work order assigning station removed."
+            : $"Work order assigning station saved. Its reader at {ip} is used by Tag Assignment.");
+    }
+
+    [RelayCommand]
+    private Task TestAssignmentReaderAsync() => TestAsync(AssignmentIp, "the work order assigning station");
+
+    // =====================================================================
+    // Reader test (GET /api/status)
+    // =====================================================================
+    private async Task TestAsync(string address, string what)
+    {
+        var ip = ReaderAddress.Normalize(address, out var error);
+        if (ip is null)
+        {
+            Toast(error!);
+            return;
+        }
+
+        if (ip.Length == 0)
+        {
+            Toast($"Enter the IP address of {what}'s reader first.");
+            return;
+        }
+
+        Toast($"Contacting {ip}...");
+        try
+        {
+            var s = await _services.Readers.ProbeAsync(ip);
+            Toast($"{ip} OK: {s.Device}, {(ReaderAddress.IsUsableMac(s.Mac) ? "MAC " + s.Mac : "no MAC reported (" + s.Mac + ")")}, firmware {s.Firmware}, {s.Mode} mode" +
+                  (s.ReaderOk ? "." : " - WARNING: the RC522 module was not detected (check its wiring)."));
+        }
+        catch (Exception ex)
+        {
+            Toast($"{ip} did not answer: {RfidReaderClient.Describe(ex)}.");
+        }
     }
 
     // =====================================================================
@@ -272,8 +429,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             _services.Database.Restore(dlg.FileName);
             _settings.Reload();
+            _services.ConfigureReaders(); // the restored stations may have other reader addresses
             ReloadStations();
-            AutoDetectReaders =_settings.GetBool(SettingsService.AutoDetectReaders, true);
+            LoadAssignmentStation();
             Toast("Database restored.");
         }
         catch (Exception ex)
@@ -300,8 +458,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(AddStationCommand), nameof(SaveStationsCommand),
         nameof(DeleteStationCommand), nameof(SetFinalStationCommand), nameof(RestoreDatabaseCommand),
-        nameof(AssignReaderCommand), nameof(RemoveReaderCommand),
-        nameof(ChangePasswordCommand))]
+        nameof(SaveAssignmentStationCommand), nameof(ChangePasswordCommand))]
     private bool _isUnlocked;
 
     [RelayCommand]
@@ -328,8 +485,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         if (!IsUnlocked) return;
         IsUnlocked = false;
-        StopReaderCapture();
         ReloadStations(); // drop any unsaved grid edits
+        LoadAssignmentStation();
         Toast("Settings locked.");
     }
 
@@ -353,10 +510,18 @@ public sealed partial class SettingsViewModel : ObservableObject
     // =====================================================================
     [ObservableProperty] private string _statusMessage = "";
 
-    /// <summary>Selected tab (0=Stations, 1=Database). Lets navigation focus a section.</summary>
+    /// <summary>Selected tab (0=Stations, 1=Assignment Station, 2=Database). Lets navigation focus a section.</summary>
     [ObservableProperty] private int _settingsTabIndex;
 
     private void Toast(string message) => StatusMessage = message;
+
+    private void OnUi(Action action)
+    {
+        if (_dispatcher is not null && !_dispatcher.CheckAccess())
+            _dispatcher.BeginInvoke(action);
+        else
+            action();
+    }
 
     private static MessageBoxResult Confirm(string text)
         => MessageBox.Show(text, "Confirm", MessageBoxButton.YesNo, MessageBoxImage.Question);
@@ -364,5 +529,6 @@ public sealed partial class SettingsViewModel : ObservableObject
     public void Dispose()
     {
         _services.Stations.Changed -= OnStationsChanged;
+        _services.Readers.StatusChanged -= OnReaderStatusChanged;
     }
 }

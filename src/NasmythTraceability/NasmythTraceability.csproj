@@ -13,7 +13,7 @@
     <Version>1.0.0</Version>
     <Company>Nasmyth Asia (IN) Pvt Ltd.</Company>
     <Product>Work Order Traceability System</Product>
-    <Description>Work Order Traceability System - multi USB scanner station tracking, history and reporting.</Description>
+    <Description>Work Order Traceability System - network RFID reader station tracking, tag writing, history and reporting.</Description>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 

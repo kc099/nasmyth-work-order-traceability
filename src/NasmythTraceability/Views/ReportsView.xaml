@@ -51,8 +51,25 @@
         <!-- Chart -->
         <Border Grid.Row="2" Style="{StaticResource Card}" Margin="4,0">
             <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Text="Scans by Station" Style="{StaticResource H2}" Margin="0,0,0,6" />
-                <ctl:BarChartControl ItemsSource="{Binding ScansByStation}" EmptyText="No scans in range" MinHeight="180" />
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                    <TextBlock Text="Scans by Station" Style="{StaticResource H2}" VerticalAlignment="Center" />
+                    <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center"
+                               Style="{StaticResource Caption}">
+                        <Run Text="{Binding TotalValid, Mode=OneWay}" FontWeight="Bold" Foreground="{DynamicResource AppOkBrush}" />
+                        <Run Text=" valid    " />
+                        <Run Text="{Binding TotalInvalid, Mode=OneWay}" FontWeight="Bold" Foreground="{DynamicResource AppNgBrush}" />
+                        <Run Text=" invalid    " />
+                        <Run Text="{Binding TotalRepeat, Mode=OneWay}" FontWeight="Bold" Foreground="{DynamicResource AppWarnBrush}" />
+                        <Run Text=" repeat" />
+                    </TextBlock>
+                </DockPanel>
+                <TextBlock DockPanel.Dock="Bottom" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,6,0,0"
+                           Text="Valid: recorded as a station visit. Invalid: tag not assigned, out of sequence, work order blocked or already completed. Repeat: a valid work order tapped again at the station it is already at. Exported reports contain the valid scans only." />
+                <!-- One group of bars per station; scrolls sideways when there are many stations -->
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                    <ctl:GroupedBarChartControl ItemsSource="{Binding StationBreakdown}" EmptyText="No scans in range"
+                                                MinHeight="180" />
+                </ScrollViewer>
             </DockPanel>
         </Border>
 

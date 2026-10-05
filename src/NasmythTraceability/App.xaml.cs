@@ -72,12 +72,11 @@ public partial class App : Application
             {
                 using var svc = new AppServices(AppConfig.Load(), useSimulatedScanner: true);
                 svc.Trace.PurgeAll();
-                var devices = svc.Stations.DeleteAllDevices();
                 var tags = svc.Tags.RemoveAll();
                 Console.WriteLine($"WIPE: db = {svc.Database.DatabasePath}");
                 Console.WriteLine($"WIPE: cleared scan history, current positions and logs; " +
-                                  $"removed {devices} reader assignment(s) and {tags} tag assignment(s)");
-                Console.WriteLine("WIPE: stations and settings kept");
+                                  $"removed {tags} tag assignment(s)");
+                Console.WriteLine("WIPE: stations, reader addresses and settings kept");
                 Shutdown(0);
             }
             catch (Exception ex)

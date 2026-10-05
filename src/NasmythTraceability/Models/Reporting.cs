@@ -24,9 +24,27 @@ public sealed class StationCount
     public int Total => Ok + Ng;
 }
 
+/// <summary>
+/// Scans at one station split by what they came to (Reports chart): valid (recorded as a
+/// station visit), invalid (unassigned tag, out of sequence, blocked...) and repeat valid scans.
+/// </summary>
+public sealed class StationScanBreakdown
+{
+    public int StationId { get; set; }
+    public string StationCode { get; set; } = "";
+    public string StationName { get; set; } = "";
+    public int Valid { get; set; }
+    public int Invalid { get; set; }
+    public int Repeat { get; set; }
+    public int Total => Valid + Invalid + Repeat;
+}
+
 /// <summary>Everything a report export needs, gathered once.</summary>
 public sealed class ReportBundle
 {
+    /// <summary>Printed on every exported report.</summary>
+    public const string ScopeNote = "Valid scans only. Invalid and repeat scans are not included.";
+
     public string CompanyName { get; set; } = "Nasmyth Asia (IN) Pvt Ltd.";
     public string Title { get; set; } = "Work Order Traceability Report";
     public DateTime GeneratedAt { get; set; } = DateTime.Now;

@@ -85,6 +85,31 @@ public sealed class DatabaseService : IDisposable
                         "SELECT COUNT(*) FROM pragma_table_info('trace_history') WHERE name = 'exited_at';", 0) == 0)
                     ExecScript(cn, tx, "ALTER TABLE trace_history ADD COLUMN exited_at TEXT;");
 
+                // Version 3: stations carry the address and identity of their network reader.
+                foreach (var column in new[] { "reader_ip", "reader_mac" })
+                    if (ScalarInt(cn, tx,
+                            $"SELECT COUNT(*) FROM pragma_table_info('stations') WHERE name = '{column}';", 0) == 0)
+                        ExecScript(cn, tx, $"ALTER TABLE stations ADD COLUMN {column} TEXT NOT NULL DEFAULT '';");
+
+                // Version 4: each station scan in scan_logs says what it came to, and which tag it was.
+                if (ScalarInt(cn, tx,
+                        "SELECT COUNT(*) FROM pragma_table_info('scan_logs') WHERE name = 'outcome';", 0) == 0)
+                {
+                    ExecScript(cn, tx, "ALTER TABLE scan_logs ADD COLUMN outcome TEXT;");
+                    ExecScript(cn, tx, "ALTER TABLE scan_logs ADD COLUMN tag_id TEXT NOT NULL DEFAULT '';");
+
+                    // Older rows: work it out from the log type. Reader status lines have no
+                    // scanned data, and "Exit from" lines are Info, so neither is counted.
+                    ExecScript(cn, tx,
+                        "UPDATE scan_logs SET outcome = CASE log_type " +
+                        "  WHEN 'Raw' THEN 'Accepted' WHEN 'Duplicate' THEN 'Duplicate' " +
+                        "  WHEN 'Rejected' THEN 'Rejected' WHEN 'Error' THEN 'Error' END " +
+                        "WHERE station_id IS NOT NULL AND raw_data <> '' AND log_type <> 'Info';");
+                    ExecScript(cn, tx,
+                        "UPDATE scan_logs SET tag_id = raw_data, raw_data = '' " +
+                        "WHERE message LIKE 'Tag is not assigned%';");
+                }
+
                 Exec(cn, tx, "UPDATE schema_info SET version = $v, applied_at = $t WHERE id = 1;",
                     ("$v", SchemaSql.SchemaVersion), ("$t", Db.ToDb(DateTime.Now)));
             }

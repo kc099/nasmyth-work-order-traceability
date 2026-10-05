@@ -42,7 +42,7 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="0" Text="Scanned Work Orders" Style="{StaticResource H2}" Margin="0,0,0,8" />
+                    <TextBlock Grid.Row="0" Text="Scans" Style="{StaticResource H2}" Margin="0,0,0,8" />
 
                     <Grid Grid.Row="1" Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
@@ -62,26 +62,66 @@
                         <Button Grid.Column="3" Content="Refresh" Command="{Binding RefreshPositionsCommand}" />
                     </Grid>
 
-                    <DataGrid Grid.Row="2" ItemsSource="{Binding CurrentPositions}"
-                              SelectedItem="{Binding SelectedPosition}" IsReadOnly="True">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Work Order" Binding="{Binding Barcode}" Width="*" />
-                            <DataGridTextColumn Header="Station" Binding="{Binding StationCode}" Width="80" />
-                            <DataGridTemplateColumn Header="Status" Width="110" SortMemberPath="StatusText">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <Border CornerRadius="4" Padding="8,2" HorizontalAlignment="Left"
-                                                Background="{Binding StatusText, Converter={StaticResource StatusToBrush}}">
-                                            <TextBlock Text="{Binding StatusText}" Foreground="White" FontSize="11" FontWeight="SemiBold" />
-                                        </Border>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Result" Binding="{Binding ResultText}" Width="64" />
-                            <DataGridTextColumn Header="Scans" Binding="{Binding ScanCount}" Width="60" />
-                            <DataGridTextColumn Header="Last Scan" Binding="{Binding LastScanText}" Width="150" />
-                        </DataGrid.Columns>
-                    </DataGrid>
+                    <TabControl Grid.Row="2">
+                        <TabItem Header="Scanned Work Orders">
+                            <DataGrid ItemsSource="{Binding CurrentPositions}" Margin="0,8,0,0"
+                                      SelectedItem="{Binding SelectedPosition}" IsReadOnly="True">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Work Order" Binding="{Binding Barcode}" Width="*" />
+                                    <DataGridTextColumn Header="Station" Binding="{Binding StationCode}" Width="80" />
+                                    <DataGridTemplateColumn Header="Status" Width="110" SortMemberPath="StatusText">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Border CornerRadius="4" Padding="8,2" HorizontalAlignment="Left"
+                                                        Background="{Binding StatusText, Converter={StaticResource StatusToBrush}}">
+                                                    <TextBlock Text="{Binding StatusText}" Foreground="White" FontSize="11" FontWeight="SemiBold" />
+                                                </Border>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                    <DataGridTextColumn Header="Result" Binding="{Binding ResultText}" Width="64" />
+                                    <DataGridTextColumn Header="Scans" Binding="{Binding ScanCount}" Width="60" />
+                                    <DataGridTextColumn Header="Last Scan" Binding="{Binding LastScanText}" Width="150" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </TabItem>
+
+                        <!-- Taps that were not recorded as a station visit -->
+                        <TabItem>
+                            <TabItem.Header>
+                                <TextBlock>
+                                    <Run Text="Invalid &amp; Repeat Scans (" /><Run Text="{Binding ScanExceptions.Count, Mode=OneWay}" /><Run Text=")" />
+                                </TextBlock>
+                            </TabItem.Header>
+                            <DockPanel Margin="0,8,0,0">
+                                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                                    <TextBlock Text="Show" VerticalAlignment="Center" Style="{StaticResource Caption}" Margin="0,0,8,0" />
+                                    <ComboBox ItemsSource="{Binding ExceptionKindOptions}" SelectedItem="{Binding ExceptionKind}" Width="170" />
+                                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="12,0,0,0"
+                                               Text="Invalid: tag not assigned, out of sequence, blocked or already completed. Repeat: tapped again at the station it is already at. Newest first." />
+                                </DockPanel>
+                                <DataGrid ItemsSource="{Binding ScanExceptions}" IsReadOnly="True">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Time" Binding="{Binding TimeText}" Width="140" />
+                                        <DataGridTextColumn Header="Station" Binding="{Binding StationText}" Width="70" />
+                                        <DataGridTextColumn Header="Tag" Binding="{Binding TagId}" Width="110" />
+                                        <DataGridTextColumn Header="Work Order" Binding="{Binding RawData}" Width="120" />
+                                        <DataGridTemplateColumn Header="Type" Width="80" SortMemberPath="KindText">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Border CornerRadius="4" Padding="8,2" HorizontalAlignment="Left"
+                                                            Background="{Binding KindKey, Converter={StaticResource StatusToBrush}}">
+                                                        <TextBlock Text="{Binding KindText}" Foreground="White" FontSize="11" FontWeight="SemiBold" />
+                                                    </Border>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTextColumn Header="Reason" Binding="{Binding Message}" Width="*" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </DockPanel>
+                        </TabItem>
+                    </TabControl>
                 </Grid>
             </Border>
 

@@ -39,7 +39,7 @@ public static class PdfExporter
 
         var columns = new (string Header, double Width)[]
         {
-            ("Time", 110), ("Station", 55), ("Work Order", 170), ("Result", 50), ("Message", 130),
+            ("Time In", 110), ("Station", 55), ("Work Order", 150), ("Time Out", 110), ("Note", 90),
         };
         y = DrawTableHeader(gfx, fonts, columns, y);
 
@@ -55,11 +55,11 @@ public static class PdfExporter
             {
                 s.ScannedAt.ToString("dd/MM/yyyy HH:mm:ss"),
                 s.StationCode,
-                Trim(s.Barcode, 28),
-                s.Result.ToString(),
-                Trim(s.Message, 22),
+                Trim(s.Barcode, 26),
+                s.ExitedAt?.ToString("dd/MM/yyyy HH:mm:ss") ?? "-",
+                Trim(s.Message, 16),
             };
-            DrawRow(gfx, fonts, columns, cells, y, s.Result == ScanResult.NG);
+            DrawRow(gfx, fonts, columns, cells, y, highlight: false);
             y += 16;
         }
 
@@ -81,7 +81,8 @@ public static class PdfExporter
             $"Period: {b.Summary.From:dd/MM/yyyy} to {b.Summary.To:dd/MM/yyyy}     " +
             $"Generated: {b.GeneratedAt:dd/MM/yyyy HH:mm:ss}",
             f.Small, XBrushes.Black, Margin, y);
-        return y + 18;
+        gfx.DrawString(ReportBundle.ScopeNote, f.Small, XBrushes.Black, Margin, y + 12);
+        return y + 30;
     }
 
     private static double DrawKpis(XGraphics gfx, Fonts f, ReportBundle b, double y)
@@ -89,11 +90,8 @@ public static class PdfExporter
         y += 6;
         var kpis = new (string Label, string Value)[]
         {
-            ("Total Scans", b.Summary.TotalScans.ToString("N0")),
-            ("OK Scans", b.Summary.OkScans.ToString("N0")),
-            ("NG Scans", b.Summary.NgScans.ToString("N0")),
+            ("Valid Scans", b.Summary.OkScans.ToString("N0")),
             ("Unique Work Orders", b.Summary.UniqueBarcodes.ToString("N0")),
-            ("OK Rate", b.Summary.OkRate.ToString("P1")),
         };
 
         const double cardW = 98, cardH = 46, gap = 6;
@@ -116,14 +114,14 @@ public static class PdfExporter
 
         var columns = new (string Header, double Width)[]
         {
-            ("Station", 70), ("Name", 200), ("OK", 60), ("NG", 60), ("Total", 60),
+            ("Station", 70), ("Name", 240), ("Valid Scans", 90),
         };
         y = DrawTableHeader(gfx, f, columns, y);
 
         foreach (var s in b.ByStation)
         {
             DrawRow(gfx, f, columns,
-                new[] { s.StationCode, s.StationName, s.Ok.ToString(), s.Ng.ToString(), s.Total.ToString() },
+                new[] { s.StationCode, s.StationName, s.Ok.ToString() },
                 y, highlight: false);
             y += 16;
         }

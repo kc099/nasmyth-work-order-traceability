@@ -54,33 +54,15 @@
             </StackPanel>
         </DockPanel>
 
-        <!-- What the readers are doing right now -->
-        <Border Grid.Row="1" Margin="4,0,4,10" Padding="12,8" CornerRadius="8"
-                Background="{DynamicResource AppSurfaceAltBrush}" BorderThickness="1">
-            <Border.Style>
-                <Style TargetType="Border">
-                    <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsUnlocked}" Value="True">
-                            <Setter Property="BorderBrush" Value="{DynamicResource AppWarnBrush}" />
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </Border.Style>
-            <TextBlock TextWrapping="Wrap">
-                <TextBlock.Style>
-                    <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-                        <Setter Property="Text"
-                                Value="This page is locked. Enter the administrator password to assign tags. Until then the readers keep recording station scans as usual." />
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsUnlocked}" Value="True">
-                                <Setter Property="Text"
-                                        Value="Assignment mode is on: a tag tapped on any reader is read here and is NOT recorded as a station scan. Lock or leave this page to go back to tracking." />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </TextBlock.Style>
-            </TextBlock>
+        <!-- The assignment station's reader -->
+        <Border Grid.Row="1" Margin="4,0,4,10" Padding="12,8" CornerRadius="8" BorderThickness="1"
+                Background="{DynamicResource AppSurfaceAltBrush}"
+                BorderBrush="{Binding ReaderStateKey, Converter={StaticResource StatusToBrush}}">
+            <DockPanel>
+                <Ellipse Width="10" Height="10" Margin="0,0,10,0" VerticalAlignment="Center"
+                         Fill="{Binding ReaderStateKey, Converter={StaticResource StatusToBrush}}" />
+                <TextBlock Text="{Binding ReaderText}" TextWrapping="Wrap" VerticalAlignment="Center" />
+            </DockPanel>
         </Border>
 
         <Grid Grid.Row="2" Margin="4,0">
@@ -89,33 +71,75 @@
                 <ColumnDefinition Width="1.5*" />
             </Grid.ColumnDefinitions>
 
-            <!-- Assign a tag to a work order -->
+            <!-- Write a work order to a tag -->
             <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,6,0">
-                <StackPanel>
-                    <TextBlock Text="Assign Tag to Work Order" Style="{StaticResource H2}" Margin="0,0,0,12" />
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Text="Write Work Order to Tag" Style="{StaticResource H2}" Margin="0,0,0,12" />
 
-                    <TextBlock Text="1. Tag ID (tap the tag on a reader)" Style="{StaticResource Caption}" Margin="0,0,0,4" />
-                    <TextBox Text="{Binding TagId, UpdateSourceTrigger=PropertyChanged}" Height="36" FontWeight="SemiBold"
-                             IsEnabled="{Binding IsUnlocked}" />
-                    <TextBlock Text="{Binding TagInfo}" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,6,0,14" />
+                        <TextBlock Text="1. Work order number (4 to 16 letters and digits; - _ / . allowed inside)"
+                                   Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,0,0,4" />
+                        <TextBox Text="{Binding WorkOrder, UpdateSourceTrigger=PropertyChanged}"
+                                 MinHeight="36" FontWeight="SemiBold" CharacterCasing="Upper"
+                                 IsEnabled="{Binding IsWriting, Converter={StaticResource InverseBool}}">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Return" Command="{Binding WriteTagCommand}" />
+                            </TextBox.InputBindings>
+                        </TextBox>
+                        <TextBlock Text="{Binding WorkOrderHint}" FontSize="12" TextWrapping="Wrap" Margin="2,4,0,0"
+                                   Foreground="{Binding WorkOrderHintKey, Converter={StaticResource StatusToBrush}}"
+                                   Visibility="{Binding WorkOrderHint, Converter={StaticResource EmptyToVisibility}}" />
 
-                    <TextBlock Text="2. Work order number (letters and digits)" Style="{StaticResource Caption}" Margin="0,0,0,4" />
-                    <TextBox Text="{Binding WorkOrder, UpdateSourceTrigger=PropertyChanged}" Height="36"
-                             CharacterCasing="Upper" MaxLength="40" IsEnabled="{Binding IsUnlocked}">
-                        <TextBox.InputBindings>
-                            <KeyBinding Key="Return" Command="{Binding AssignCommand}" />
-                        </TextBox.InputBindings>
-                    </TextBox>
+                        <TextBlock Text="2. Press Write to tag, then present the tag on the assignment station's reader"
+                                   Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,14,0,4" />
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="Write to tag" Style="{StaticResource AccentButton}" MinWidth="130"
+                                    Command="{Binding WriteTagCommand}" Margin="0,0,8,0" />
+                            <Button Content="Cancel" Command="{Binding CancelWriteCommand}" MinWidth="90" />
+                        </StackPanel>
 
-                    <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
-                        <Button Content="Assign" Style="{StaticResource AccentButton}" MinWidth="110"
-                                Command="{Binding AssignCommand}" Margin="0,0,8,0" />
-                        <Button Content="Clear" Command="{Binding ClearCommand}" />
+                        <!-- Write status -->
+                        <Border Margin="0,16,0,0" Padding="14,12" CornerRadius="8" BorderThickness="2"
+                                Background="{DynamicResource AppSurfaceAltBrush}"
+                                BorderBrush="{Binding WriteStateKey, Converter={StaticResource StatusToBrush}}">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding CountdownText}" FontSize="22" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource AppWarnBrush}" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                <StackPanel>
+                                    <TextBlock FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4"
+                                               Foreground="{Binding WriteStateKey, Converter={StaticResource StatusToBrush}}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                                <Setter Property="Text" Value="Status" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding WriteStateKey}" Value="WARN">
+                                                        <Setter Property="Text" Value="Waiting for tag..." />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding WriteStateKey}" Value="OK">
+                                                        <Setter Property="Text" Value="Tag written" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding WriteStateKey}" Value="NG">
+                                                        <Setter Property="Text" Value="Not written" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding WriteMessage}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- A tag presented outside a write -->
+                        <TextBlock Text="Last tag at the assignment station" Style="{StaticResource Caption}" Margin="0,18,0,4" />
+                        <TextBlock Text="{Binding LastTagId}" FontWeight="SemiBold"
+                                   Visibility="{Binding LastTagId, Converter={StaticResource EmptyToVisibility}}" />
+                        <TextBlock Text="{Binding LastTagInfo}" Style="{StaticResource Caption}" TextWrapping="Wrap" />
+
+                        <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,18,0,0"
+                                   Text="The production station readers keep recording scans while this page is open. After writing, tap the tag at the first station to record its entry, then at the final station to complete the work order." />
                     </StackPanel>
-
-                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,18,0,0"
-                               Text="After assigning, lock or leave this page and tap the tag at the first station to record its entry, then at the final station to complete the work order." />
-                </StackPanel>
+                </ScrollViewer>
             </Border>
 
             <!-- Existing assignments -->
@@ -139,7 +163,7 @@
                     <DataGrid Grid.Row="2" ItemsSource="{Binding Assignments}"
                               SelectedItem="{Binding SelectedAssignment}" IsReadOnly="True">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Tag ID" Binding="{Binding TagId}" Width="150" />
+                            <DataGridTextColumn Header="Tag UID" Binding="{Binding TagId}" Width="150" />
                             <DataGridTextColumn Header="Work Order" Binding="{Binding WorkOrder}" Width="*" />
                             <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="120" />
                             <DataGridTextColumn Header="Station" Binding="{Binding StationCode}" Width="80" />

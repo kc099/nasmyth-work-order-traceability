@@ -90,8 +90,11 @@ public abstract class ChartBase : Control
         if (chart._observed is not null)
             chart._observed.CollectionChanged += chart.OnCollectionChanged;
 
-        chart.InvalidateVisual();
+        chart.OnDataChanged();
     }
 
-    private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => InvalidateVisual();
+    private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => OnDataChanged();
+
+    /// <summary>The items or the collection changed.</summary>
+    protected virtual void OnDataChanged() => InvalidateVisual();
 }

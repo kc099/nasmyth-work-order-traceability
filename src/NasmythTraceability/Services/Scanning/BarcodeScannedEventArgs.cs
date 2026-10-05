@@ -1,6 +1,6 @@
 namespace NasmythTraceability.Services.Scanning;
 
-/// <summary>A completed read from one physical scanner.</summary>
+/// <summary>A completed read from one reader at a production station.</summary>
 public sealed class BarcodeScannedEventArgs : EventArgs
 {
     public BarcodeScannedEventArgs(string barcode, string deviceKey, string deviceName, DateTime timestamp)
@@ -11,23 +11,28 @@ public sealed class BarcodeScannedEventArgs : EventArgs
         Timestamp = timestamp;
     }
 
+    /// <summary>What identifies the tag: the card uid for an RFID reader.</summary>
     public string Barcode { get; }
 
-    /// <summary>Raw Input device path; empty when the source device could not be identified.</summary>
+    /// <summary>Identity of the reader (its MAC, or its address until the MAC is known).</summary>
     public string DeviceKey { get; }
 
     public string DeviceName { get; }
 
+    /// <summary>When the tag was presented.</summary>
     public DateTime Timestamp { get; }
 
-    /// <summary>
-    /// True when the read came from a device that is not linked to a station yet but
-    /// behaves like a reader, so it can be linked automatically.
-    /// </summary>
-    public bool IsNewDevice { get; init; }
+    /// <summary>Station the reader belongs to.</summary>
+    public int? StationId { get; init; }
+
+    /// <summary>Text stored on the card (normally its work order); informational only.</summary>
+    public string CardData { get; init; } = "";
+
+    /// <summary>Why the card's data block could not be read; the uid is still valid.</summary>
+    public string ReadError { get; init; } = "";
 }
 
-/// <summary>Source of barcode reads (real hardware or a stand-in).</summary>
+/// <summary>Source of tag reads (network readers or a stand-in).</summary>
 public interface IScannerService : IDisposable
 {
     event EventHandler<BarcodeScannedEventArgs>? BarcodeScanned;

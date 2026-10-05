@@ -131,4 +131,33 @@ public sealed class ScanLog
     public string Message { get; set; } = "";
 
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>What a station scan came to; null for lines that are not a scan (reader status, exits).</summary>
+    public ScanOutcome? Outcome { get; set; }
+
+    /// <summary>RFID tag that was read; empty when unknown.</summary>
+    public string TagId { get; set; } = "";
+
+    // --- display helpers (Scan Information: invalid and repeat scans) ---
+    public string TimeText => CreatedAt.ToString("dd/MM/yyyy HH:mm:ss");
+
+    public string StationText => string.IsNullOrEmpty(StationCode) ? "-" : StationCode;
+
+    /// <summary>"Valid" / "Invalid" / "Repeat".</summary>
+    public string KindText => Outcome switch
+    {
+        ScanOutcome.Accepted => "Valid",
+        ScanOutcome.Duplicate => "Repeat",
+        null => "",
+        _ => "Invalid",
+    };
+
+    /// <summary>Key for the status brush: OK / NG / DUP.</summary>
+    public string KindKey => Outcome switch
+    {
+        ScanOutcome.Accepted => "OK",
+        ScanOutcome.Duplicate => "DUP",
+        null => "",
+        _ => "NG",
+    };
 }

@@ -31,8 +31,10 @@ public static class ExcelExporter
         ws.Cell(2, 1).Value = b.Title;
         ws.Cell(3, 1).Value = $"Period: {b.Summary.From:dd/MM/yyyy} to {b.Summary.To:dd/MM/yyyy}";
         ws.Cell(4, 1).Value = $"Generated: {b.GeneratedAt:dd/MM/yyyy HH:mm:ss}";
+        ws.Cell(5, 1).Value = ReportBundle.ScopeNote;
+        ws.Cell(5, 1).Style.Font.Italic = true;
 
-        var row = 6;
+        var row = 7;
         ws.Cell(row, 1).Value = "KPI";
         ws.Cell(row, 2).Value = "Value";
         ws.Range(row, 1, row, 2).Style.Font.Bold = true;
@@ -41,11 +43,8 @@ public static class ExcelExporter
 
         (string, object)[] kpis =
         {
-            ("Total Scans", b.Summary.TotalScans),
-            ("OK Scans", b.Summary.OkScans),
-            ("NG Scans", b.Summary.NgScans),
+            ("Valid Scans", b.Summary.OkScans),
             ("Unique Work Orders", b.Summary.UniqueBarcodes),
-            ("OK Rate", $"{b.Summary.OkRate:P1}"),
         };
         foreach (var (k, v) in kpis)
         {
@@ -60,7 +59,7 @@ public static class ExcelExporter
     private static void BuildByStationSheet(XLWorkbook wb, ReportBundle b)
     {
         var ws = wb.AddWorksheet("Scans by Station");
-        string[] headers = { "Station", "Name", "OK", "NG", "Total" };
+        string[] headers = { "Station", "Name", "Valid Scans" };
         for (var c = 0; c < headers.Length; c++)
         {
             ws.Cell(1, c + 1).Value = headers[c];
@@ -74,8 +73,6 @@ public static class ExcelExporter
             ws.Cell(row, 1).Value = s.StationCode;
             ws.Cell(row, 2).Value = s.StationName;
             ws.Cell(row, 3).Value = s.Ok;
-            ws.Cell(row, 4).Value = s.Ng;
-            ws.Cell(row, 5).Value = s.Total;
             row++;
         }
 
@@ -85,7 +82,7 @@ public static class ExcelExporter
     private static void BuildScansSheet(XLWorkbook wb, ReportBundle b)
     {
         var ws = wb.AddWorksheet("Scans");
-        string[] headers = { "Time In", "Station", "Work Order", "Result", "Message", "Time Out" };
+        string[] headers = { "Time In", "Station", "Work Order", "Note", "Time Out" };
         for (var c = 0; c < headers.Length; c++)
         {
             ws.Cell(1, c + 1).Value = headers[c];
@@ -100,12 +97,11 @@ public static class ExcelExporter
             ws.Cell(row, 1).Style.DateFormat.Format = "yyyy-mm-dd hh:mm:ss";
             ws.Cell(row, 2).Value = s.StationCode;
             ws.Cell(row, 3).Value = s.Barcode;
-            ws.Cell(row, 4).Value = s.Result.ToString();
-            ws.Cell(row, 5).Value = s.Message;
+            ws.Cell(row, 4).Value = s.Message;
             if (s.ExitedAt is { } exit)
             {
-                ws.Cell(row, 6).Value = exit;
-                ws.Cell(row, 6).Style.DateFormat.Format = "yyyy-mm-dd hh:mm:ss";
+                ws.Cell(row, 5).Value = exit;
+                ws.Cell(row, 5).Style.DateFormat.Format = "yyyy-mm-dd hh:mm:ss";
             }
             row++;
         }

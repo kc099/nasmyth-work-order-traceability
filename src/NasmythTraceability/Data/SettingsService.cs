@@ -30,15 +30,17 @@ public sealed class SettingsService
     public const string MinBarcodeLength = "scanning.minBarcodeLength";
     public const string TreatUnmappedDeviceAsError = "scanning.treatUnmappedAsError";
 
-    /// <summary>Link a reader nobody has set up to a station on its first card tap.</summary>
-    public const string AutoDetectReaders = "scanning.autoDetectReaders";
+    /// <summary>Address (host[:port]) of the work order assigning station's network reader.</summary>
+    public const string AssignmentReaderIp = "rfid.assignmentReaderIp";
 
-    /// <summary>
-    /// Semicolon-separated hardware ids of reader models that are always treated as readers.
-    /// The default is the JT308 125 kHz USB card reader.
-    /// </summary>
-    public const string KnownReaderIds = "scanning.knownReaderIds";
-    public const string DefaultKnownReaderIds = "VID_FFFF&PID_0035";
+    /// <summary>MAC the assignment reader last reported.</summary>
+    public const string AssignmentReaderMac = "rfid.assignmentReaderMac";
+
+    /// <summary>Milliseconds between two polls of a reader (README: 300-1000).</summary>
+    public const string ReaderPollIntervalMs = "rfid.pollIntervalMs";
+
+    /// <summary>Seconds the assignment reader stays armed waiting for a tag to write.</summary>
+    public const string TagWriteTimeoutSeconds = "rfid.writeTimeoutSeconds";
 
     public const string ReportDefaultRangeDays = "reports.defaultRangeDays";
     public const string ReportExportFolder = "reports.exportFolder";
@@ -136,8 +138,9 @@ public sealed class SettingsService
             [DuplicateWindowSeconds] = "5",
             [MinBarcodeLength] = "4",
             [TreatUnmappedDeviceAsError] = "true",
-            [AutoDetectReaders] = "true",
-            [KnownReaderIds] = DefaultKnownReaderIds,
+            [AssignmentReaderIp] = "",
+            [ReaderPollIntervalMs] = "500",
+            [TagWriteTimeoutSeconds] = "30",
             [ReportDefaultRangeDays] = "7",
             [ReportExportFolder] = "",
             [ReportDefaultFormat] = "Excel",

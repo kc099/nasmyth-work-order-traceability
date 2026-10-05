@@ -27,14 +27,17 @@ public sealed class TagService
     /// <summary>Work orders are stored in upper case so "wo-12a" and "WO-12A" are the same job.</summary>
     public static string NormalizeWorkOrder(string? workOrder) => (workOrder ?? "").Trim().ToUpperInvariant();
 
+    /// <summary>Max length of a work order: it is written to the tag, which holds 16 characters.</summary>
+    public const int MaxWorkOrderLength = 16;
+
     /// <summary>Letters and digits, with - _ / . allowed inside. Returns null when valid, else the reason.</summary>
     public static string? ValidateWorkOrder(string workOrder, int minLength)
     {
         minLength = Math.Max(1, minLength);
         if (workOrder.Length < minLength)
             return $"Work order must be at least {minLength} characters.";
-        if (workOrder.Length > 40)
-            return "Work order must be 40 characters or fewer.";
+        if (workOrder.Length > MaxWorkOrderLength)
+            return $"Work order must be {MaxWorkOrderLength} characters or fewer (a tag holds {MaxWorkOrderLength}).";
         if (!char.IsLetterOrDigit(workOrder[0]) || !char.IsLetterOrDigit(workOrder[^1]))
             return "Work order must start and end with a letter or digit.";
         if (workOrder.Any(c => !(c is >= 'A' and <= 'Z' or >= '0' and <= '9' or '-' or '_' or '/' or '.')))

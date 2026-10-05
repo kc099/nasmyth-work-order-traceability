@@ -1,9 +1,8 @@
 namespace NasmythTraceability.Services.Scanning;
 
 /// <summary>
-/// Stand-in scanner used when no hardware is attached (developer machines, the
-/// self-test, and the dashboard "simulate scan" helper). Reads are pushed in
-/// manually via <see cref="Emit"/>.
+/// Stand-in scanner used when no hardware is attached (the self-test, the data tools).
+/// Reads are pushed in manually via <see cref="Emit"/>.
 /// </summary>
 public sealed class SimulatedScannerService : IScannerService
 {
@@ -13,9 +12,13 @@ public sealed class SimulatedScannerService : IScannerService
 
     public void Start() => IsRunning = true;
 
-    public void Emit(string barcode, string deviceKey, string deviceName, bool isNewDevice = false)
+    public void Emit(string tagId, int stationId, string deviceName = "Simulated reader", string cardData = "")
         => BarcodeScanned?.Invoke(this,
-            new BarcodeScannedEventArgs(barcode, deviceKey, deviceName, DateTime.Now) { IsNewDevice = isNewDevice });
+            new BarcodeScannedEventArgs(tagId, "SIM-" + stationId, deviceName, DateTime.Now)
+            {
+                StationId = stationId,
+                CardData = cardData,
+            });
 
     public void Dispose() => IsRunning = false;
 }

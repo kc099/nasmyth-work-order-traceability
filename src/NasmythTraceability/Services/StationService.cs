@@ -4,24 +4,21 @@ using NasmythTraceability.Models;
 
 namespace NasmythTraceability.Services;
 
-/// <summary>Stations and the USB-reader-to-station mapping.</summary>
+/// <summary>Stations and the network RFID reader each one is polled through.</summary>
 public sealed class StationService
 {
     private readonly DatabaseService _db;
 
     public StationService(DatabaseService db) => _db = db;
 
-    /// <summary>Raised after any station or device add / update / delete so views can refresh.</summary>
+    /// <summary>Raised after any station add / update / delete so views can refresh.</summary>
     public event EventHandler? Changed;
 
     private void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);
 
     // ---------------------------------------------------------------- stations
 
-    // Every station read also carries the name of the reader assigned to it.
-    private const string SelectStations =
-        "SELECT s.*, (SELECT d.device_name FROM station_devices d WHERE d.station_id = s.id " +
-        "             ORDER BY d.id LIMIT 1) AS reader_name FROM stations s";
+    private const string SelectStations = "SELECT s.* FROM stations s";
 
     public List<Station> GetStations(bool includeDisabled = true)
     {
@@ -43,22 +40,33 @@ public sealed class StationService
     public int AddStation(Station s)
     {
         var id = (int)_db.ExecuteReturningId(
-            "INSERT INTO stations (code, name, sequence, is_enabled, is_final, created_at) " +
-            "VALUES ($c, $n, $s, $e, $f, $t);",
+            "INSERT INTO stations (code, name, sequence, is_enabled, is_final, reader_ip, created_at) " +
+            "VALUES ($c, $n, $s, $e, $f, $ip, $t);",
             ("$c", s.Code.Trim()), ("$n", s.Name.Trim()), ("$s", s.Sequence),
-            ("$e", s.IsEnabled ? 1 : 0), ("$f", s.IsFinal ? 1 : 0), ("$t", Db.ToDb(DateTime.Now)));
+            ("$e", s.IsEnabled ? 1 : 0), ("$f", s.IsFinal ? 1 : 0), ("$ip", s.ReaderIp.Trim()),
+            ("$t", Db.ToDb(DateTime.Now)));
         RaiseChanged();
         return id;
     }
 
+    /// <summary>Saves a station. A new reader address forgets the identity (MAC) of the old reader.</summary>
     public void UpdateStation(Station s)
     {
         _db.Execute(
-            "UPDATE stations SET code = $c, name = $n, sequence = $s, is_enabled = $e, is_final = $f WHERE id = $id;",
+            "UPDATE stations SET code = $c, name = $n, sequence = $s, is_enabled = $e, is_final = $f, " +
+            "  reader_mac = CASE WHEN reader_ip = $ip THEN reader_mac ELSE '' END, reader_ip = $ip " +
+            "WHERE id = $id;",
             ("$c", s.Code.Trim()), ("$n", s.Name.Trim()), ("$s", s.Sequence),
-            ("$e", s.IsEnabled ? 1 : 0), ("$f", s.IsFinal ? 1 : 0), ("$id", s.Id));
+            ("$e", s.IsEnabled ? 1 : 0), ("$f", s.IsFinal ? 1 : 0), ("$ip", s.ReaderIp.Trim()), ("$id", s.Id));
         RaiseChanged();
     }
+
+    /// <summary>
+    /// Records the MAC the station's reader reported. Not a configuration change, so
+    /// <see cref="Changed"/> is not raised (the readers keep polling undisturbed).
+    /// </summary>
+    public void SetReaderMac(int stationId, string mac)
+        => _db.Execute("UPDATE stations SET reader_mac = $m WHERE id = $id;", ("$m", mac), ("$id", stationId));
 
     /// <summary>Number of trace_history + current_trace rows that reference this station.</summary>
     public int CountStationTraceRefs(int id)
@@ -66,7 +74,7 @@ public sealed class StationService
                          "     + (SELECT COUNT(*) FROM current_trace WHERE station_id = $id);", ("$id", id));
 
     /// <summary>
-    /// Deletes a station. Device and route-step rows cascade automatically; trace data does not,
+    /// Deletes a station. Route-step rows cascade automatically; trace data does not,
     /// so pass <paramref name="cascadeTraceData"/> to also remove its history / current / log rows.
     /// </summary>
     public void DeleteStation(int id, bool cascadeTraceData = false)
@@ -80,6 +88,7 @@ public sealed class StationService
                 DatabaseService.Exec(cn, tx, "DELETE FROM scan_logs WHERE station_id = $id;", ("$id", id));
             }
 
+            DatabaseService.Exec(cn, tx, "DELETE FROM station_devices WHERE station_id = $id;", ("$id", id));
             DatabaseService.Exec(cn, tx, "DELETE FROM stations WHERE id = $id;", ("$id", id));
         });
         RaiseChanged();
@@ -96,74 +105,6 @@ public sealed class StationService
         RaiseChanged();
     }
 
-    // ---------------------------------------------------------------- devices
-
-    public List<StationDevice> GetDevices()
-        => _db.Query(
-            "SELECT d.*, s.code AS station_code FROM station_devices d " +
-            "JOIN stations s ON s.id = d.station_id ORDER BY s.sequence, d.device_name;",
-            MapDevice);
-
-    public StationDevice? GetDeviceByKey(string deviceKey)
-        => _db.QuerySingle(
-            "SELECT d.*, s.code AS station_code FROM station_devices d " +
-            "JOIN stations s ON s.id = d.station_id WHERE d.device_key = $k;",
-            MapDevice, ("$k", deviceKey));
-
-    /// <summary>Resolves the station a scanner belongs to, or null if the device is not mapped/enabled.</summary>
-    public Station? ResolveStationForDevice(string deviceKey)
-    {
-        var device = GetDeviceByKey(deviceKey);
-        if (device is null || !device.IsEnabled)
-            return null;
-        var station = GetStation(device.StationId);
-        return station is { IsEnabled: true } ? station : null;
-    }
-
-    /// <summary>
-    /// Assigns a reader to a station. A station has one reader and a reader serves one
-    /// station, so the station's previous reader and the reader's previous station are released.
-    /// </summary>
-    public void MapDeviceToStation(string deviceKey, string deviceName, int stationId)
-    {
-        _db.InTransaction((cn, tx) =>
-        {
-            DatabaseService.Exec(cn, tx,
-                "DELETE FROM station_devices WHERE station_id = $s AND device_key <> $k;",
-                ("$s", stationId), ("$k", deviceKey));
-            DatabaseService.Exec(cn, tx,
-                "INSERT INTO station_devices (station_id, device_key, device_name, is_enabled, created_at) " +
-                "VALUES ($s, $k, $n, 1, $t) " +
-                "ON CONFLICT(device_key) DO UPDATE SET station_id = excluded.station_id, " +
-                "  device_name = excluded.device_name, is_enabled = 1;",
-                ("$s", stationId), ("$k", deviceKey), ("$n", deviceName), ("$t", Db.ToDb(DateTime.Now)));
-        });
-        RaiseChanged();
-    }
-
-    /// <summary>
-    /// Station a newly detected reader is linked to: the first enabled station that has no
-    /// reader yet. Null when every enabled station already has one.
-    /// </summary>
-    public Station? PickStationForNewReader()
-        => GetStations(includeDisabled: false).FirstOrDefault(s => string.IsNullOrEmpty(s.ReaderName));
-
-    /// <summary>Releases the reader assigned to a station. Returns false when it had none.</summary>
-    public bool RemoveStationReader(int stationId)
-    {
-        var n = _db.Execute("DELETE FROM station_devices WHERE station_id = $s;", ("$s", stationId));
-        RaiseChanged();
-        return n > 0;
-    }
-
-    /// <summary>Removes every scanner-to-station mapping. Returns rows removed.</summary>
-    public int DeleteAllDevices()
-    {
-        var n = _db.Execute("DELETE FROM station_devices;");
-        RaiseChanged();
-        return n;
-    }
-
     // ---------------------------------------------------------------- mapping
 
     private static Station MapStation(IDataRecord r) => new()
@@ -175,17 +116,7 @@ public sealed class StationService
         IsEnabled = r.GetBool("is_enabled"),
         IsFinal = r.GetBool("is_final"),
         CreatedAt = r.GetDate("created_at"),
-        ReaderName = r.GetString("reader_name"),
-    };
-
-    private static StationDevice MapDevice(IDataRecord r) => new()
-    {
-        Id = r.GetInt("id"),
-        StationId = r.GetInt("station_id"),
-        DeviceKey = r.GetString("device_key"),
-        DeviceName = r.GetString("device_name"),
-        IsEnabled = r.GetBool("is_enabled"),
-        CreatedAt = r.GetDate("created_at"),
-        StationCode = r.GetString("station_code"),
+        ReaderIp = r.GetString("reader_ip"),
+        ReaderMac = r.GetString("reader_mac"),
     };
 }

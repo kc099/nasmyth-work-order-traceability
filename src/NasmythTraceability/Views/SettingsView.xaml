@@ -59,7 +59,7 @@
         </DockPanel>
 
         <TabControl Grid.Row="1" Margin="4,0" SelectedIndex="{Binding SettingsTabIndex}">
-            <!-- ================= Stations (each with its reader) ================= -->
+            <!-- ================= Stations (each with its network reader) ================= -->
             <TabItem Header="Stations">
                 <Border Style="{StaticResource Card}" Margin="0,8,0,0">
                     <Grid>
@@ -67,36 +67,133 @@
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <DataGrid Grid.Row="0" ItemsSource="{Binding Stations}" SelectedItem="{Binding SelectedStation}"
                                   IsReadOnly="{Binding IsUnlocked, Converter={StaticResource InverseBool}}">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Code" Binding="{Binding Code}" Width="100" />
+                                <DataGridTextColumn Header="Code" Binding="{Binding Code}" Width="90" />
                                 <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
-                                <DataGridTextColumn Header="Sequence" Binding="{Binding Sequence}" Width="100" />
-                                <DataGridTextColumn Header="Reader" Binding="{Binding ReaderText, Mode=OneWay}" Width="220" IsReadOnly="True" />
-                                <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding IsEnabled}" Width="90" />
-                                <DataGridCheckBoxColumn Header="Final" Binding="{Binding IsFinal}" Width="80" IsReadOnly="True" />
+                                <DataGridTextColumn Header="Sequence" Binding="{Binding Sequence}" Width="90" />
+                                <DataGridTextColumn Header="Reader IP address" Binding="{Binding ReaderIp}" Width="170" />
+                                <DataGridTemplateColumn Header="Reader status" Width="1.3*" IsReadOnly="True">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Ellipse Width="9" Height="9" Margin="0,0,8,0" VerticalAlignment="Center"
+                                                         Fill="{Binding ReaderStateKey, Converter={StaticResource StatusToBrush}}" />
+                                                <TextBlock Text="{Binding ReaderStatus}" TextTrimming="CharacterEllipsis"
+                                                           ToolTip="{Binding ReaderStatus}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding IsEnabled}" Width="80" />
+                                <DataGridCheckBoxColumn Header="Final" Binding="{Binding IsFinal}" Width="64" IsReadOnly="True" />
                             </DataGrid.Columns>
                         </DataGrid>
+
                         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12,0,0">
-                            <Button Content="Add station" Command="{Binding AddStationCommand}" Margin="0,0,8,0" />
                             <Button Content="Save changes" Style="{StaticResource AccentButton}"
                                     Command="{Binding SaveStationsCommand}" Margin="0,0,8,0" />
                             <Button Content="Set as final" Command="{Binding SetFinalStationCommand}" Margin="0,0,8,0" />
                             <Button Content="Delete" Command="{Binding DeleteStationCommand}" />
                             <Border Width="1" Background="{DynamicResource AppBorderBrush}" Margin="14,2" />
-                            <Button Content="{Binding AssignReaderText}" Style="{StaticResource OkButton}"
-                                    Command="{Binding AssignReaderCommand}" MinWidth="120" Margin="0,0,8,0" />
-                            <Button Content="Remove reader" Command="{Binding RemoveReaderCommand}" />
+                            <Button Content="Test reader" Style="{StaticResource OkButton}" MinWidth="110"
+                                    Command="{Binding TestStationReaderCommand}" />
                         </StackPanel>
-                        <StackPanel Grid.Row="2" Margin="0,12,0,0">
-                            <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap"
-                                       Text="Each station has one RFID reader. Select a station, press Assign reader, then tap any card on that station's reader. The station marked Final is the last one: a scan there completes the work order." />
-                            <CheckBox Content="Link a new reader to the first station without one when a card is tapped on it"
-                                      IsChecked="{Binding AutoDetectReaders}" IsEnabled="{Binding IsUnlocked}" Margin="0,8,0,0" />
-                        </StackPanel>
+
+                        <!-- Add a station, with the IP address of its reader -->
+                        <Border Grid.Row="2" Margin="0,14,0,0" Padding="12,10" CornerRadius="8" BorderThickness="1"
+                                BorderBrush="{DynamicResource AppBorderBrush}" Background="{DynamicResource AppSurfaceAltBrush}">
+                            <StackPanel>
+                                <TextBlock Text="Add station" Style="{StaticResource H2}" Margin="0,0,0,8" />
+                                <WrapPanel>
+                                    <StackPanel Margin="0,0,10,0">
+                                        <TextBlock Text="Code" Style="{StaticResource Caption}" Margin="0,0,0,3" />
+                                        <TextBox Text="{Binding NewStationCode, UpdateSourceTrigger=PropertyChanged}" Width="90"
+                                                 CharacterCasing="Upper" IsEnabled="{Binding IsUnlocked}" />
+                                    </StackPanel>
+                                    <StackPanel Margin="0,0,10,0">
+                                        <TextBlock Text="Name" Style="{StaticResource Caption}" Margin="0,0,0,3" />
+                                        <TextBox Text="{Binding NewStationName, UpdateSourceTrigger=PropertyChanged}" Width="200"
+                                                 IsEnabled="{Binding IsUnlocked}" />
+                                    </StackPanel>
+                                    <StackPanel Margin="0,0,10,0">
+                                        <TextBlock Text="Reader IP address" Style="{StaticResource Caption}" Margin="0,0,0,3" />
+                                        <TextBox Text="{Binding NewStationIp, UpdateSourceTrigger=PropertyChanged}"
+                                                 Width="170" IsEnabled="{Binding IsUnlocked}">
+                                            <TextBox.InputBindings>
+                                                <KeyBinding Key="Return" Command="{Binding AddStationCommand}" />
+                                            </TextBox.InputBindings>
+                                        </TextBox>
+                                    </StackPanel>
+                                    <Button Content="Test" Command="{Binding TestNewStationReaderCommand}" VerticalAlignment="Bottom"
+                                            Margin="0,0,8,0" MinWidth="70" />
+                                    <Button Content="Add station" Style="{StaticResource AccentButton}" VerticalAlignment="Bottom"
+                                            Command="{Binding AddStationCommand}" MinWidth="110" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Grid.Row="3" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,12,0,0"
+                                   Text="Each production station has one network RFID reader, polled at its IP address (give it a DHCP reservation so it never changes). Readers are polled all the time, whatever page is open, and are kept in read mode. The station marked Final is the last one: a scan there completes the work order." />
                     </Grid>
+                </Border>
+            </TabItem>
+
+            <!-- ================= Work order assigning station ================= -->
+            <TabItem Header="Assignment Station">
+                <Border Style="{StaticResource Card}" Margin="0,8,0,0">
+                    <StackPanel MaxWidth="720" HorizontalAlignment="Left">
+                        <TextBlock Text="Work order assigning station" Style="{StaticResource H2}" Margin="0,0,0,6" />
+                        <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,0,0,14"
+                                   Text="A separate reader used only on the Tag Assignment page, to write a work order to a tag. Its taps are never recorded as station scans, and it is not part of the production sequence." />
+
+                        <TextBlock Text="Reader IP address" Style="{StaticResource Caption}" Margin="0,0,0,4" />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBox Text="{Binding AssignmentIp, UpdateSourceTrigger=PropertyChanged}" Width="220"
+                                     IsEnabled="{Binding IsUnlocked}">
+                                <TextBox.InputBindings>
+                                    <KeyBinding Key="Return" Command="{Binding SaveAssignmentStationCommand}" />
+                                </TextBox.InputBindings>
+                            </TextBox>
+                            <Button Content="Save" Style="{StaticResource AccentButton}" Margin="8,0,0,0" MinWidth="80"
+                                    Command="{Binding SaveAssignmentStationCommand}" />
+                            <Button Content="Test reader" Style="{StaticResource OkButton}" Margin="8,0,0,0"
+                                    Command="{Binding TestAssignmentReaderCommand}" />
+                        </StackPanel>
+
+                        <Grid Margin="0,16,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Status" Style="{StaticResource Caption}" Margin="0,3,16,3" />
+                            <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Margin="0,3">
+                                <Ellipse Width="9" Height="9" Margin="0,0,8,0" VerticalAlignment="Center"
+                                         Fill="{Binding AssignmentStatusKey, Converter={StaticResource StatusToBrush}}" />
+                                <TextBlock Text="{Binding AssignmentStatusText}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Reader MAC" Style="{StaticResource Caption}" Margin="0,3,16,3" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,3">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                        <Setter Property="Text" Value="{Binding AssignmentMac}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding AssignmentMac}" Value="">
+                                                <Setter Property="Text" Value="Not seen yet" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </StackPanel>
                 </Border>
             </TabItem>
 
