@@ -1,0 +1,22 @@
+<UserControl x:Class="TraceabilitySystem.Controls.BrandLogo"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignHeight="65" d:DesignWidth="140">
+
+    <!-- The logo has a white background, so it sits on a white plate on the dark header. -->
+    <Border Background="White" CornerRadius="8" Padding="8,4">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="12" ShadowDepth="0" Opacity="0.35" Color="#FF000000" />
+        </Border.Effect>
+        <Grid>
+            <Image x:Name="RasterLogo" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" />
+
+            <!-- shown only if Assets/logo.png is missing from the build -->
+            <TextBlock x:Name="TextLogo" Visibility="Collapsed" VerticalAlignment="Center" TextAlignment="Center"
+                       FontFamily="Segoe UI" FontWeight="Bold" FontSize="14" Foreground="#FF5A5A5A"
+                       TextWrapping="Wrap" MaxWidth="160" />
+        </Grid>
+    </Border>
+</UserControl>

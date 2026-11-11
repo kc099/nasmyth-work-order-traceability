@@ -1,0 +1,82 @@
+<UserControl x:Class="TraceabilitySystem.Views.ReportsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:TraceabilitySystem.ViewModels"
+             xmlns:ctl="clr-namespace:TraceabilitySystem.Controls"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:ReportsViewModel}"
+             d:DesignHeight="780" d:DesignWidth="1120">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="Reports &amp; Analytics" Style="{StaticResource H1}" Margin="4,0,4,10" />
+
+        <!-- Date filter + export -->
+        <Border Grid.Row="1" Style="{StaticResource Card}" Margin="4,0,4,10" Padding="12">
+            <DockPanel>
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
+                    <Button Style="{StaticResource OkButton}" Command="{Binding ExportExcelCommand}" Margin="0,0,8,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE9F9;" FontFamily="Segoe MDL2 Assets" FontSize="12" Margin="0,0,6,0" />
+                            <TextBlock Text="Export to Excel" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource AccentButton}" Command="{Binding ExportPdfCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="12" Margin="0,0,6,0" />
+                            <TextBlock Text="Export to PDF" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="From" VerticalAlignment="Center" Style="{StaticResource Caption}" Margin="0,0,6,0" />
+                    <DatePicker SelectedDate="{Binding FromDate}" Width="140" />
+                    <TextBlock Text="To" VerticalAlignment="Center" Style="{StaticResource Caption}" Margin="14,0,6,0" />
+                    <DatePicker SelectedDate="{Binding ToDate}" Width="140" />
+                    <Button Content="Apply" Style="{StaticResource AccentButton}" Command="{Binding ApplyCommand}" Margin="14,0,0,0" />
+                    <TextBlock Text="{Binding RangeText}" VerticalAlignment="Center" Margin="16,0,0,0"
+                               Style="{StaticResource Caption}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Chart -->
+        <Border Grid.Row="2" Style="{StaticResource Card}" Margin="4,0">
+            <DockPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                    <TextBlock Text="Scans by Station" Style="{StaticResource H2}" VerticalAlignment="Center" />
+                    <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center"
+                               Style="{StaticResource Caption}">
+                        <Run Text="{Binding TotalValid, Mode=OneWay}" FontWeight="Bold" Foreground="{DynamicResource AppOkBrush}" />
+                        <Run Text=" valid    " />
+                        <Run Text="{Binding TotalInvalid, Mode=OneWay}" FontWeight="Bold" Foreground="{DynamicResource AppNgBrush}" />
+                        <Run Text=" invalid    " />
+                        <Run Text="{Binding TotalRepeat, Mode=OneWay}" FontWeight="Bold" Foreground="{DynamicResource AppWarnBrush}" />
+                        <Run Text=" repeat" />
+                    </TextBlock>
+                </DockPanel>
+                <TextBlock DockPanel.Dock="Bottom" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,6,0,0"
+                           Text="Valid: recorded as a station visit. Invalid: tag not assigned, out of sequence, work order blocked or already completed. Repeat: a valid work order tapped again at the station it is already at. Exported reports contain the valid scans only." />
+                <!-- One group of bars per station; scrolls sideways when there are many stations -->
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                    <ctl:GroupedBarChartControl ItemsSource="{Binding StationBreakdown}" EmptyText="No scans in range"
+                                                MinHeight="180" />
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
+        <!-- Status -->
+        <Border Grid.Row="3" Margin="4,10,4,0" Padding="10,6" CornerRadius="6"
+                Background="{DynamicResource AppSurfaceAltBrush}">
+            <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource Caption}" TextTrimming="CharacterEllipsis" />
+        </Border>
+    </Grid>
+</UserControl>

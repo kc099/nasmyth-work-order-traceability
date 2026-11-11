@@ -1,0 +1,6 @@
+{
+  "applicationName": "Work Order Traceability System",
+  "companyName": "Sigma Advanced Systems",
+  "databasePath": "",
+  "_comment": "databasePath empty => %ProgramData%\Sigma Advanced Systems\Traceability\traceability.db (an older %ProgramData%\Nasmyth\Traceability database is copied there on first start). Set an absolute path to override."
+}

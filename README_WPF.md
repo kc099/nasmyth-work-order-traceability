@@ -1,7 +1,7 @@
-# Nasmyth Asia — Work Order Traceability System
+# Sigma Advanced Systems — Work Order Traceability System
 
 C# / WPF (.NET 8) desktop application that implements the Work Order Traceability
-System described in *Nasmyth_Barcode_Traceability_Project_Design_v3*.
+System described in the original *Barcode Traceability Project Design v3*.
 
 It reads barcodes from **multiple USB scanners**, identifies the **station** each
 scan came from, and answers the core question: **which barcode is at which station
@@ -28,13 +28,13 @@ wired into the scan flow.
 
 ```powershell
 # from the repo root
-dotnet build NasmythTraceability.sln -c Release
+dotnet build TraceabilitySystem.sln -c Release
 
 # run
-dotnet run --project src/NasmythTraceability -c Release
+dotnet run --project src/TraceabilitySystem -c Release
 ```
 
-or launch `src/NasmythTraceability/bin/Release/net8.0-windows/NasmythTraceability.exe`.
+or launch `src/TraceabilitySystem/bin/Release/net8.0-windows/TraceabilitySystem.exe`.
 
 ### Command-line switches
 
@@ -50,20 +50,21 @@ or launch `src/NasmythTraceability/bin/Release/net8.0-windows/NasmythTraceabilit
 | `--calpreview <file.png>` | renders a themed `Calendar` (DatePicker popup styling check) |
 
 ```powershell
-dotnet run --project src/NasmythTraceability -- --selftest
+dotnet run --project src/TraceabilitySystem -- --selftest
 ```
 
 ## First run
 
 * The database is created at
-  `%ProgramData%\Nasmyth\Traceability\traceability.db`
+  `%ProgramData%\Sigma Advanced Systems\Traceability\traceability.db`
+  (a database left at the old `%ProgramData%\Nasmyth\Traceability` location is copied there on first start)
   (override with `databasePath` in `config.json` next to the exe).
 * Seeded data: stations **ST01–ST04**, with **ST04** fixed as the final station.
 * No scanners are mapped yet — open **Settings ▸ USB Scanners**, press
   **Detection**, trigger a scanner, pick a station, **Map to station**.
 * With no hardware you can still use **Dashboard ▸ Simulate scan** (pick a
   station, type a barcode, Enter).
-* To explore with data, run `NasmythTraceability.exe --seed-demo` once, then
+* To explore with data, run `TraceabilitySystem.exe --seed-demo` once, then
   start the app — the Dashboard, Current Information and Reports will be populated.
 
 ---
@@ -105,8 +106,8 @@ new scanner can be identified; it stops on mapping, on leaving Settings, or on e
 | `scan_logs` | raw, duplicate, rejected and error scans |
 | `settings` | key/value store behind the Settings screen |
 
-Schema and first-run seed: [`Data/SchemaSql.cs`](src/NasmythTraceability/Data/SchemaSql.cs),
-[`Data/Seed.cs`](src/NasmythTraceability/Data/Seed.cs).
+Schema and first-run seed: [`Data/SchemaSql.cs`](src/TraceabilitySystem/Data/SchemaSql.cs),
+[`Data/Seed.cs`](src/TraceabilitySystem/Data/Seed.cs).
 
 ## C# modules (design §6)
 
@@ -144,13 +145,14 @@ Charts are lightweight, dependency-free custom controls
 
 ### Branding / logo
 
-The header shows `Controls/BrandLogo`. It renders a **vector Nasmyth mark** by
-default; to use the exact company artwork instead, drop the file at
-`src/NasmythTraceability/Assets/nasmyth-logo.png` (or `.jpg`) and rebuild — it is
-picked up automatically, no code change. Preview the header band with:
+The header shows `Controls/BrandLogo`: the company logo `Assets/logo.png` on a white
+plate, compiled into the app. To change the logo, replace that file (same name) and
+rebuild; no code change is needed. If the image is missing, the company name is shown.
+The company name itself (header and reports) is the `general.companyName` setting,
+default **Sigma Advanced Systems**. Preview the header band with:
 
 ```powershell
-dotnet run --project src/NasmythTraceability -- --logopng header.png
+dotnet run --project src/TraceabilitySystem -- --logopng header.png
 ```
 
 ## Reports & export (design §3)
@@ -176,7 +178,7 @@ list. Export (`Export/ExcelExporter.cs`, `Export/PdfExporter.cs`):
 ## Project layout
 
 ```
-src/NasmythTraceability/
+src/TraceabilitySystem/
   App.xaml(.cs)            composition root, --selftest / --smoke
   config.json              bootstrap config (db path, names)
   Themes/                  dark-blue theme + control styles

@@ -1,9 +1,9 @@
 # Work Order Traceability System — Full Project Documentation
 
-**Company:** Nasmyth Asia (IN) Pvt Ltd.
+**Company:** Sigma Advanced Systems
 **Application version:** 1.0.0
 **Document date:** 26 September 2026
-**Based on:** *Nasmyth Barcode Traceability Project Design v3*, updated for work orders
+**Based on:** the original *Barcode Traceability Project Design v3*, updated for work orders
 
 ---
 
@@ -122,7 +122,7 @@ Anyone searching for *WO-1001A* at 10:30 sees "ST01, In Progress". After 11:45 t
 
 ## 5. A tour of the screens
 
-The application has five screens, chosen from the **MENU** on the left. The header across the top always shows the Nasmyth logo, the company name, "Work Order Traceability System", and the current date and time. The version number is shown at the bottom of the menu.
+The application has five screens, chosen from the **MENU** on the left. The header across the top always shows the company logo, the company name, "Work Order Traceability System", and the current date and time. The version number is shown at the bottom of the menu.
 
 ### 5.1 Dashboard (Live Station Monitoring)
 
@@ -335,18 +335,18 @@ For most people, using the system means scanning and looking. Nobody needs to ty
 
 ### Starting the program
 
-- Run **NasmythTraceability.exe** from the program folder, or
+- Run **TraceabilitySystem.exe** from the program folder, or
 - Build from source (for IT staff), from the project folder:
 
 ```powershell
-dotnet build NasmythTraceability.sln -c Release
-dotnet run --project src/NasmythTraceability -c Release
+dotnet build TraceabilitySystem.sln -c Release
+dotnet run --project src/TraceabilitySystem -c Release
 ```
 
 ### What happens the first time
 
 - The database file is created automatically at
-  `C:\ProgramData\Nasmyth\Traceability\traceability.db`.
+  `C:\ProgramData\Sigma Advanced Systems\Traceability\traceability.db`. A database from an earlier version, at `C:\ProgramData\Nasmyth\Traceability`, is copied there on the first start; the old file is left as it was.
 - Four starting stations are created (**ST01–ST04**, with **ST04** as the final station). They can be renamed, added to or changed in Settings.
 - The settings password is set to **admin**.
 - No readers are polled until their IP addresses are entered in *Settings*.
@@ -363,7 +363,7 @@ Reports are created from **Reports & Analytics** for the selected date range. **
 | Best for | Further analysis, filtering, sharing numbers | Printing, emailing, archiving |
 | Contents | Sheets: **Summary** (valid scans, work orders), **Scans by Station** (valid scans per station), **Scans** (every valid station visit in the period, with time in and time out) | Company header, summary figures, valid scans by station, and scan detail pages |
 
-- Files are saved to **Documents › Nasmyth Traceability › Exports**.
+- Files are saved to **Documents › Traceability System › Exports**.
 - File names include the date range and time created, for example
   `Traceability_20260920_20260926_101530.xlsx`.
 - After saving, the folder opens automatically with the new file selected.
@@ -372,7 +372,7 @@ Reports are created from **Reports & Analytics** for the selected date range. **
 
 ## 10. Data, backups and security
 
-- **Where data lives:** one database file on the shop-floor PC (`C:\ProgramData\Nasmyth\Traceability\traceability.db`). Nothing is sent over the internet.
+- **Where data lives:** one database file on the shop-floor PC (`C:\ProgramData\Sigma Advanced Systems\Traceability\traceability.db`). Nothing is sent over the internet.
 - **Reader network:** the readers have no password of their own (see README.md): anyone on the same network can change their mode. Keep them on a trusted shop-floor network and close their web pages in production.
 - **What is stored:** stations with the IP address and MAC of each station's reader, the assigning station's reader, tag-to-work-order assignments, every scan with its entry and exit time (history), the current position of each work order, logs, and settings.
 - **Backups:** use *Settings › Database › Backup*. The file is named like `traceability_backup_20260926_101530.db`. Store copies away from the PC.
@@ -435,6 +435,9 @@ The project began as the *Barcode Traceability System*. It has since been reshap
 | Tag Assignment | The work order can be typed while the page is locked, with an immediate check of what is typed; text boxes that cannot be used now look greyed out |
 | RFID readers | Readers whose firmware reports MAC `00:00:00:00:00:00` are identified by their IP address instead |
 | Database | Upgraded automatically to version 4: each scan in the log records what it came to (valid / invalid / repeat) and the tag |
+| Branding | Now **Sigma Advanced Systems**: new logo in the header (`Assets/logo.png`), and the company name on the screens and on every Excel/PDF report. An existing database is switched to the new name automatically |
+| Program | Renamed to **TraceabilitySystem** (`TraceabilitySystem.exe`, `TraceabilitySystem.sln`, folder `src/TraceabilitySystem`) |
+| Data folders | Database moved to `C:\ProgramData\Sigma Advanced Systems\Traceability` (copied over automatically from the old Nasmyth folder on the first start); exports go to *Documents › Traceability System › Exports* |
 
 ---
 
@@ -516,7 +519,7 @@ Note: the work order code is stored in columns named `barcode`. Only the screens
 | **A work order never shows Completed** | It must be scanned at the station marked *Final* in Settings › Stations |
 | **I can't edit anything in Settings** | Settings are locked. Enter the password at the top right and press Unlock |
 | **I forgot the password** | Restore a backup whose password you know, or ask IT to reset the password value in the database |
-| **Where are my exported reports?** | Documents › Nasmyth Traceability › Exports |
+| **Where are my exported reports?** | Documents › Traceability System › Exports |
 | **Can I use the normal keyboard to scan?** | No. There is no manual scan screen. Every scan comes from a tag tapped on a reader |
 | **Does it need the internet?** | No. It runs on the PC and talks only to the readers on the local network |
 | **The database file was deleted** | Start the application again. It creates a new empty database and carries on. Use *Settings › Database › Restore* to bring back a backup |
